@@ -5,6 +5,9 @@ import cors from "cors";
 
 //import routes
 import authRoutes from "./routes/auth.js";
+import categoryRoutes from "./routes/category.js";
+import productRoutes from "./routes/product.js";
+import productVariantsRoutes from "./routes/productVariants.js";
 
 
 dotenv.config();
@@ -23,7 +26,9 @@ app.use(cookieParser());
 
 
 app.use("/api/auth", authRoutes);
-
+app.use("/api/categories", categoryRoutes);
+app.use("/api/products", productRoutes);
+app.use("/api/product-variants", productVariantsRoutes);
 
 
 app.get("/", (req, res) => {

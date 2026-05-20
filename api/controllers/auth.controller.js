@@ -5,9 +5,9 @@ import crypto from 'crypto';
 import client from '../config/redis.js';
 import { Resend } from 'resend';
 
-const generateToken = (userId) => {
+const generateToken = (user) => {
     return jwt.sign(
-        { userId },
+        { userId: user.id, role: user.role },
         process.env.JWT_SECRET,
         { expiresIn: '1h' }
     )
@@ -43,7 +43,7 @@ export const register = async (req, res) => {
         );
 
         const user = newUser.rows[0];
-        const token = generateToken(user.id);
+        const token = generateToken(user);
 
         res.cookie("token", token, {
             httpOnly: true,
@@ -83,7 +83,7 @@ export const login = async (req, res) => {
             return res.status(400).json({ message: "Incorrect password"});
         }
 
-        const token = generateToken(user.rows[0].id);
+        const token = generateToken(user.rows[0]);
 
         res.cookie("token", token, {
             httpOnly: true,
