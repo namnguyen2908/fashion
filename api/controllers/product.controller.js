@@ -1,7 +1,18 @@
 import pool from '../config/db.js';
-import { getCache, setCache, deleteCache, incrCache } from '../utils/cache.js';
+import {
+    getCache,
+    getCacheEntry,
+    getCacheVersion,
+    setCache,
+    setNotFoundCache,
+    deleteCache,
+    incrCache,
+    invalidateProductRelatedCaches,
+} from '../utils/cache.js';
 import { generateSlug } from '../utils/slugify.js';
 
+const stripTotalCount = (rows) =>
+    rows.map(({ total_count, ...product }) => product);
 
 // =========================================
 // GET ALL PRODUCTS
@@ -24,14 +35,11 @@ export const getProducts = async (req, res) => {
 
         const offset = (currentPage - 1) * pageLimit;
 
-        // CACHE VERSION
-        const version =
-            (await getCache('products:version')) || 1;
+        const version = await getCacheVersion('products:version', 1);
 
         const cacheKey =
             `products:v${version}:page=${currentPage}:limit=${pageLimit}:search=${search}:category=${category || 'all'}`;
 
-        // CHECK CACHE
         const cachedProducts = await getCache(cacheKey);
 
         if (cachedProducts) {
@@ -59,23 +67,19 @@ export const getProducts = async (req, res) => {
 
         const values = [];
 
-        // SEARCH
         if (search) {
             values.push(`%${search}%`);
             query += ` AND p.name ILIKE $${values.length}`;
         }
 
-        // CATEGORY
         if (category) {
             values.push(category);
             query += ` AND p.category_id = $${values.length}`;
         }
 
-        // LIMIT
         values.push(pageLimit);
         query += ` ORDER BY p.created_at DESC LIMIT $${values.length}`;
 
-        // OFFSET
         values.push(offset);
         query += ` OFFSET $${values.length}`;
 
@@ -94,10 +98,9 @@ export const getProducts = async (req, res) => {
             totalPages: Math.ceil(total / pageLimit),
             currentPage,
             limit: pageLimit,
-            data: products
+            data: stripTotalCount(products),
         };
 
-        // SET CACHE
         await setCache(cacheKey, response, 300);
 
         return res.status(200).json(response);
@@ -121,21 +124,20 @@ export const getProductById = async (req, res) => {
 
         const cacheKey = `product:${id}`;
 
-        const cachedProduct = await getCache(cacheKey);
+        const cached = await getCacheEntry(cacheKey);
 
-        // NOT FOUND CACHE
-        if (cachedProduct === null) {
+        if (cached.notFound) {
             return res.status(404).json({
                 success: false,
                 message: 'Product not found'
             });
         }
 
-        if (cachedProduct) {
+        if (cached.hit && cached.value) {
             return res.status(200).json({
                 success: true,
                 source: 'redis',
-                data: cachedProduct
+                data: cached.value
             });
         }
 
@@ -158,7 +160,7 @@ export const getProductById = async (req, res) => {
         );
 
         if (result.rows.length === 0) {
-            await setCache(cacheKey, null, 60);
+            await setNotFoundCache(cacheKey, 60);
 
             return res.status(404).json({
                 success: false,
@@ -273,6 +275,13 @@ export const updateProduct = async (req, res) => {
         const { id } = req.params;
         const { name, category_id, description } = req.body;
 
+        if (!name || !category_id) {
+            return res.status(400).json({
+                success: false,
+                message: 'Name and category are required'
+            });
+        }
+
         const product = await pool.query(
             `SELECT id FROM products WHERE id = $1`,
             [id]
@@ -327,7 +336,7 @@ export const updateProduct = async (req, res) => {
             WHERE id=$5
             RETURNING *
             `,
-            [category_id, name, slug, description, id]
+            [category_id, name, slug, description ?? null, id]
         );
 
         await deleteCache(`product:${id}`);
@@ -368,12 +377,18 @@ export const deleteProduct = async (req, res) => {
             });
         }
 
+        const variantsResult = await pool.query(
+            `SELECT id FROM product_variants WHERE product_id = $1`,
+            [id]
+        );
+        const variantIds = variantsResult.rows.map((row) => row.id);
+
         await pool.query(
             `DELETE FROM products WHERE id=$1`,
             [id]
         );
 
-        await deleteCache(`product:${id}`);
+        await invalidateProductRelatedCaches(id, variantIds);
         await incrCache('products:version');
 
         return res.status(200).json({
