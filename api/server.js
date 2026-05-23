@@ -9,6 +9,7 @@ import categoryRoutes from "./routes/category.js";
 import productRoutes from "./routes/product.js";
 import productVariantsRoutes from "./routes/productVariants.js";
 import productImagesRoutes from "./routes/productImages.js"
+import bannerRoutes from "./routes/banner.js";
 
 
 dotenv.config();
@@ -31,6 +32,7 @@ app.use("/api/categories", categoryRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/product-variants", productVariantsRoutes);
 app.use("/api/product-images", productImagesRoutes);
+app.use("/api/banners", bannerRoutes);
 
 
 app.get("/", (req, res) => {
