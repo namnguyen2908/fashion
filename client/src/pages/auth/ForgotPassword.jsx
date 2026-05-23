@@ -150,7 +150,7 @@ export default function ForgotPassword() {
     setIsLoading(true);
 
     try {
-      await api.post("/api/auth/forgot-password", { email: email.trim() });
+      await api.post("/auth/forgot-password", { email: email.trim() });
       console.log("✅ OTP đã gửi tới:", email);
       setStep(1); // → Slider trượt sang Step 2
     } catch (err) {
@@ -228,7 +228,7 @@ export default function ForgotPassword() {
     setIsLoading(true);
 
     try {
-      await api.post("/api/auth/verify-otp", {
+      await api.post("/auth/verify-otp", {
         email: email.trim(),
         otp: otpString,
       });
@@ -249,7 +249,7 @@ export default function ForgotPassword() {
     setServerMsg({ type: "", text: "" });
     setIsLoading(true);
     try {
-      await api.post("/api/auth/forgot-password", { email: email.trim() });
+      await api.post("/auth/forgot-password", { email: email.trim() });
       setServerMsg({ type: "success", text: "Mã mới đã được gửi lại vào email của bạn." });
     } catch {
       setServerMsg({ type: "error", text: "Không thể gửi lại mã. Thử lại sau." });
@@ -294,7 +294,7 @@ export default function ForgotPassword() {
     setIsLoading(true);
 
     try {
-      await api.post("/api/auth/reset-password", {
+      await api.post("/auth/reset-password", {
         email: email.trim(),
         otp: otp.join(""),
         newPassword,

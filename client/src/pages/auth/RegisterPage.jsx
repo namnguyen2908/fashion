@@ -1,6 +1,8 @@
 import { useState } from "react";
-import axios from "axios";
+import { Link, useNavigate } from "react-router-dom";
 import api from "../../services/api";
+import { useAuth } from "../../context/AuthContext";
+import { isAdminRole } from "../../constants/roles";
 
 // ─────────────────────────────────────────────
 // Floating Label Input Component (inline, không tách file riêng)
@@ -91,7 +93,8 @@ export default function RegisterPage() {
   // ── State: thông báo server ──
   const [serverMsg, setServerMsg] = useState({ type: "", text: "" });
 
-
+  const navigate = useNavigate();
+  const { login } = useAuth();
 
   const passwordRules = {
   minLength: password.length >= 8,
@@ -166,21 +169,24 @@ export default function RegisterPage() {
 
     try {
       // ── Gọi API Register (URL giả định) ──
-      const response = await api.post("/api/auth/register", {
+      const response = await api.post("/auth/register", {
         name: name.trim(),
         phone: phone.replace(/\s/g, ""),
         email: email.trim(),
         password,
       });
 
-      console.log("✅ Đăng ký thành công:", response.data);
+      const user = response.data?.user;
+      if (user) login(user);
+
       setServerMsg({
         type: "success",
-        text: "Tài khoản đã được tạo thành công. Kiểm tra email để xác nhận.",
+        text: "Tài khoản đã được tạo thành công. Đang chuyển hướng...",
       });
 
-      // TODO: Redirect hoặc auto-login
-      // navigate("/verify-email");
+      setTimeout(() => {
+        navigate(isAdminRole(user?.role) ? "/admin/categories" : "/", { replace: true });
+      }, 800);
     } catch (err) {
       console.error("❌ Đăng ký thất bại:", err);
       const msg =
@@ -359,13 +365,13 @@ export default function RegisterPage() {
           {/* Link sang Login */}
           <p className="mt-8 text-center text-[12px] tracking-wide font-sans text-[#9e9089]">
             Đã có tài khoản?{" "}
-            <a
-              href="/"
+            <Link
+              to="/login"
               className="text-[#1a1a1a] underline underline-offset-2 hover:text-[#5c4f45]
                          transition-colors duration-200 tracking-[0.05em]"
             >
               Đăng nhập ngay
-            </a>
+            </Link>
           </p>
         </div>
       </div>

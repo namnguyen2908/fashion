@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import api from "../../services/api";
-import { Link } from "react-router-dom";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext";
+import { isAdminRole } from "../../constants/roles";
 
 // ─────────────────────────────────────────────
 // Floating Label Input Component (inline, no separate file)
@@ -91,6 +92,20 @@ export default function LoginPage() {
 
 
   const navigate = useNavigate();
+  const location = useLocation();
+  const { user, loading: authLoading, login } = useAuth();
+
+  useEffect(() => {
+    if (authLoading || !user) return;
+    const from = location.state?.from?.pathname;
+    if (from && (!from.startsWith("/admin") || isAdminRole(user.role))) {
+      navigate(from, { replace: true });
+    } else if (isAdminRole(user.role)) {
+      navigate("/admin/products", { replace: true });
+    } else {
+      navigate("/", { replace: true });
+    }
+  }, [authLoading, user, location.state, navigate]);
   // ────────────────────────────────────────────
   // Validate toàn bộ form, trả về object errors
   // ────────────────────────────────────────────
@@ -129,15 +144,24 @@ export default function LoginPage() {
 
     try {
       // ── Gọi API Login (URL giả định) ──
-      const response = await api.post("/api/auth/login", {
+      const response = await api.post("/auth/login", {
         email: email.trim(),
         password,
       });
 
+      const user = response.data?.user;
+      if (user) login(user);
+
       setServerMsg({ type: "success", text: "Đăng nhập thành công. Đang chuyển hướng..." });
 
-      // TODO: Lưu token & redirect
-      // navigate("/dashboard");
+      const from = location.state?.from?.pathname;
+      if (from && (!from.startsWith("/admin") || isAdminRole(user?.role))) {
+        navigate(from, { replace: true });
+      } else if (isAdminRole(user?.role)) {
+        navigate("/admin/categories", { replace: true });
+      } else {
+        navigate("/", { replace: true });
+      }
     } catch (err) {
       console.error("❌ Login thất bại:", err);
       const msg =
