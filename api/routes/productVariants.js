@@ -9,7 +9,7 @@ router.get('/products/:productId/variants', getVariantsByProductId);
 router.get('/variant/:id', getVariantById);
 router.get('/admin/variant/:id', verifyToken, verifyRole('admin', 'staff'), adminGetVariantById);
 router.post('/create-variant', verifyToken, verifyRole('admin', 'staff'), createVariant);
-router.put('/update-variant/:id', verifyToken, verifyRole('admin', 'staff'), updateVariant);
+router.patch('/update-variant/:id', verifyToken, verifyRole('admin', 'staff'), updateVariant);
 router.delete('/delete-variant/:id', verifyToken, verifyRole('admin', 'staff'), deleteVariant);
 
 export default router;
