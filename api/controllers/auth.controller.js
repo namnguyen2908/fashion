@@ -5,13 +5,58 @@ import crypto from 'crypto';
 import client from '../config/redis.js';
 import { Resend } from 'resend';
 
-const generateToken = (user) => {
-    return jwt.sign(
+const ACCESS_TOKEN_EXPIRES = '15m';
+const REFRESH_TOKEN_EXPIRES = '7d';
+const ACCESS_COOKIE_MAX_AGE = 15 * 60 * 1000;
+const REFRESH_COOKIE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
+
+const cookieOptions = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+};
+
+const generateAccessToken = (user) =>
+    jwt.sign(
         { userId: user.id, role: user.role },
         process.env.JWT_SECRET,
-        { expiresIn: '1h' }
-    )
-}
+        { expiresIn: ACCESS_TOKEN_EXPIRES }
+    );
+
+const generateRefreshToken = (user) =>
+    jwt.sign(
+        { userId: user.id, role: user.role },
+        process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
+        { expiresIn: REFRESH_TOKEN_EXPIRES }
+    );
+
+const setAuthCookies = (res, user) => {
+    const accessToken = generateAccessToken(user);
+    const refreshToken = generateRefreshToken(user);
+
+    res.cookie('accessToken', accessToken, {
+        ...cookieOptions,
+        maxAge: ACCESS_COOKIE_MAX_AGE,
+    });
+
+    res.cookie('refreshToken', refreshToken, {
+        ...cookieOptions,
+        maxAge: REFRESH_COOKIE_MAX_AGE,
+    });
+};
+
+const clearAuthCookies = (res) => {
+    res.clearCookie('accessToken');
+    res.clearCookie('refreshToken');
+    res.clearCookie('token');
+};
+
+const toPublicUser = (user) => ({
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+});
 
 export const register = async (req, res) => {
     try {
@@ -38,21 +83,17 @@ export const register = async (req, res) => {
         const hashedPassword = await bcrypt.hash(password, 10);
 
         const newUser = await pool.query(
-            "INSERT INTO users (name, email, password, phone) VALUES ($1, $2, $3, $4) RETURNING id",
+            "INSERT INTO users (name, email, password, phone) VALUES ($1, $2, $3, $4) RETURNING id, name, email, role",
             [name, email, hashedPassword, phone]
         );
 
         const user = newUser.rows[0];
-        const token = generateToken(user);
+        setAuthCookies(res, user);
 
-        res.cookie("token", token, {
-            httpOnly: true,
-            secure: false,
-            sameSite: "lax",
-            maxAge: 7 * 24 * 60 * 60 * 1000,
+        return res.status(201).json({
+            message: "Account created successfully",
+            user: toPublicUser(user),
         });
-
-        return res.status(201).json({ message: "Account created successfully" });
     } catch (error) {
         console.error(error);
         return res.status(500).json({message: "Server error"});
@@ -83,24 +124,74 @@ export const login = async (req, res) => {
             return res.status(400).json({ message: "Incorrect password"});
         }
 
-        const token = generateToken(user.rows[0]);
+        const currentUser = user.rows[0];
+        setAuthCookies(res, currentUser);
 
-        res.cookie("token", token, {
-            httpOnly: true,
-            secure: false,
-            sameSite: "lax",
-            maxAge: 7 * 24 * 60 * 60 * 1000,
+        return res.status(200).json({
+            message: "Logged in successfully",
+            user: toPublicUser(currentUser),
         });
-
-        return res.status(200).json({ message: "Logged in successfully" });
     } catch (error) {
         console.error(error);
         return res.status(500).json({ message: "Server error" });
     }
 }
 
+export const refresh = async (req, res) => {
+    try {
+        const refreshToken = req.cookies.refreshToken;
+
+        if (!refreshToken) {
+            return res.status(401).json({ message: "Refresh token required" });
+        }
+
+        const decoded = jwt.verify(
+            refreshToken,
+            process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET
+        );
+
+        const user = await pool.query(
+            "SELECT id, name, email, role FROM users WHERE id = $1",
+            [decoded.userId]
+        );
+
+        if (user.rows.length === 0) {
+            clearAuthCookies(res);
+            return res.status(401).json({ message: "User not found" });
+        }
+
+        setAuthCookies(res, user.rows[0]);
+
+        return res.status(200).json({
+            message: "Token refreshed",
+            user: toPublicUser(user.rows[0]),
+        });
+    } catch (error) {
+        clearAuthCookies(res);
+        return res.status(401).json({ message: "Invalid refresh token" });
+    }
+};
+
+export const getMe = async (req, res) => {
+    try {
+        const user = await pool.query(
+            "SELECT id, name, email, role FROM users WHERE id = $1",
+            [req.user.userId]
+        );
+
+        if (user.rows.length === 0) {
+            return res.status(404).json({ message: "User not found" });
+        }
+
+        return res.status(200).json({ user: toPublicUser(user.rows[0]) });
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ message: "Server error" });
+    }
+};
+
 export const logout = (req, res) => {
-  res.clearCookie("token");
+  clearAuthCookies(res);
   res.status(200).json({
     message: "Logged out successfully",
   });
