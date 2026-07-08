@@ -26,7 +26,7 @@ const generateAccessToken = (user) =>
 const generateRefreshToken = (user) =>
     jwt.sign(
         { userId: user.id, role: user.role },
-        process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
+        process.env.JWT_REFRESH_SECRET,
         { expiresIn: REFRESH_TOKEN_EXPIRES }
     );
 
