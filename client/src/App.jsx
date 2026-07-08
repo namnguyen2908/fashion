@@ -1,11 +1,13 @@
 import './App.css'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
+import { CartProvider } from './context/CartContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import { ADMIN_ROLES } from './constants/roles'
 import PublicLayout from './layouts/PublicLayout';
 import HomePage from './pages/HomePage';
 import ProductDetailPage from './pages/products/ProductDetailPage';
+import CartPage from './pages/cart/CartPage';
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
 import ForgotPassword from './pages/auth/ForgotPassword';
@@ -18,11 +20,13 @@ import ProductDetail from './pages/admin/ProductDetail';
 function App() {
   return (
     <AuthProvider>
+      <CartProvider>
       <BrowserRouter>
         <Routes>
           <Route element={<PublicLayout />}>
             <Route path="/" element={<HomePage />} />
             <Route path="/products/:slug" element={<ProductDetailPage />} />
+            <Route path="/cart" element={<CartPage />} />
           </Route>
           <Route
             path="/admin"
@@ -43,6 +47,7 @@ function App() {
           <Route path="/forgot-password" element={<ForgotPassword />} />
         </Routes>
       </BrowserRouter>
+      </CartProvider>
     </AuthProvider>
   )
 }

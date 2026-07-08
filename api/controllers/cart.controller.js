@@ -5,7 +5,7 @@ import pool from '../config/db.js';
 // =========================================
 export const getCart = async (req, res) => {
     try {
-        const userId = req.user.id;
+        const userId = req.user.userId ?? req.user.id;
 
         const cartResult = await pool.query(
             `SELECT id FROM carts WHERE user_id = $1`,
@@ -37,7 +37,7 @@ export const getCart = async (req, res) => {
                 pv.color,
                 p.name as product_name,
                 p.slug as product_slug,
-                p.images
+                (SELECT image_url FROM product_images WHERE product_id = p.id AND (color = pv.color OR is_thumbnail = true) ORDER BY (color = pv.color) DESC NULLS LAST, is_thumbnail DESC LIMIT 1) as images
             FROM cart_items ci
             JOIN product_variants pv ON ci.variant_id = pv.id
             JOIN products p ON pv.product_id = p.id
@@ -74,8 +74,10 @@ export const getCart = async (req, res) => {
 // =========================================
 export const addItem = async (req, res) => {
     try {
-        const userId = req.user.id;
+        const userId = req.user.userId ?? req.user.id;
         const { variant_id, quantity = 1 } = req.body;
+
+        console.log(`[addItem] userId=${userId}, variant_id=${variant_id}, quantity=${quantity}`);
 
         if (!variant_id) {
             return res.status(400).json({
@@ -141,7 +143,7 @@ export const addItem = async (req, res) => {
 // =========================================
 export const updateItem = async (req, res) => {
     try {
-        const userId = req.user.id;
+        const userId = req.user.userId ?? req.user.id;
         const { id } = req.params; // cart_item_id
         const { quantity } = req.body;
 
@@ -194,7 +196,7 @@ export const updateItem = async (req, res) => {
 // =========================================
 export const removeItem = async (req, res) => {
     try {
-        const userId = req.user.id;
+        const userId = req.user.userId ?? req.user.id;
         const { id } = req.params; // cart_item_id
 
         // Verify item belongs to user's cart
@@ -239,7 +241,7 @@ export const removeItem = async (req, res) => {
 // =========================================
 export const clearCart = async (req, res) => {
     try {
-        const userId = req.user.id;
+        const userId = req.user.userId ?? req.user.id;
 
         const cartResult = await pool.query(
             `SELECT id FROM carts WHERE user_id = $1`,

@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { useCart } from "../context/CartContext";
 import { isAdminRole } from "../constants/roles";
 import { IconSearch, IconUser, IconBag, IconChevron, IconClose, IconMenu } from "./Icons";
 
 export default function SiteHeader({ categoryTree }) {
   const { user } = useAuth();
+  const { totalItems } = useCart();
   const [megaOpen, setMegaOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [mobileProductsOpen, setMobileProductsOpen] = useState(false);
@@ -119,9 +121,14 @@ export default function SiteHeader({ categoryTree }) {
           <Link
             to="/cart"
             aria-label="Giỏ hàng"
-            className={`p-1 transition-colors ${iconTone}`}
+            className={`relative p-1 transition-colors ${iconTone}`}
           >
             <IconBag />
+            {totalItems > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 text-[9px] font-bold bg-neutral-900 text-white rounded-full flex items-center justify-center">
+                {totalItems > 9 ? "9+" : totalItems}
+              </span>
+            )}
           </Link>
         </div>
       </div>

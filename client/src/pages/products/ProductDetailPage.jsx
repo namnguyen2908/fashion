@@ -1,6 +1,7 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import api from "../../services/api";
+import { useCart } from "../../context/CartContext";
 import { formatVND, calcDiscountLabel, pickDisplayVariant } from "../../utils/format";
 import { getImageForColor, getUniqueColorsFromVariants } from "../../utils/productImages";
 import { getColorSwatchStyle, normalizeColorName } from "../../constants/colors";
@@ -8,6 +9,7 @@ import { cloudinaryThumb } from "../../utils/cloudinary";
 
 export default function ProductDetailPage() {
   const { slug } = useParams();
+  const { refreshCart } = useCart();
 
   const [product, setProduct] = useState(null);
   const [variants, setVariants] = useState([]);
@@ -15,9 +17,11 @@ export default function ProductDetailPage() {
   const [relatedProducts, setRelatedProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [addedMessage, setAddedMessage] = useState("");
 
   const [selectedColor, setSelectedColor] = useState("");
   const [selectedSize, setSelectedSize] = useState("");
+  const [selectedVariantId, setSelectedVariantId] = useState(null);
   const [activeImage, setActiveImage] = useState("");
   const [tab, setTab] = useState("description");
   const [quantity, setQuantity] = useState(1);
@@ -36,12 +40,8 @@ export default function ProductDetailPage() {
   }, [variants, selectedColor]);
 
   const selectedVariant = useMemo(() => {
-    return variants.find(
-      (v) =>
-        normalizeColorName(v.color) === selectedColor &&
-        v.size === selectedSize
-    );
-  }, [variants, selectedColor, selectedSize]);
+    return variants.find((v) => v.id === selectedVariantId) || null;
+  }, [variants, selectedVariantId]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -72,6 +72,11 @@ export default function ProductDetailPage() {
           .map((v) => v.size)
           .filter(Boolean)[0] || "";
         setSelectedSize(firstSizeOfColor);
+
+        const firstVar = vars.find(
+          (v) => normalizeColorName(v.color) === firstColor && v.size === firstSizeOfColor && v.is_active !== false
+        );
+        setSelectedVariantId(firstVar?.id ?? null);
 
         setActiveImage(getImageForColor(imgs, firstColor) || "");
 
@@ -122,30 +127,60 @@ export default function ProductDetailPage() {
     fetchData();
   }, [slug]);
 
+  const pickVariant = useCallback((color, size) => {
+    return variants.find(
+      (v) => normalizeColorName(v.color) === color && v.size === size && v.is_active !== false
+    ) || null;
+  }, [variants]);
+
   const handleColorChange = (color) => {
-    setSelectedColor(color);
     const firstSize = variants
-      .filter((v) => normalizeColorName(v.color) === color)
+      .filter((v) => normalizeColorName(v.color) === color && v.is_active !== false)
       .map((v) => v.size)
       .filter(Boolean)[0] || "";
+    const v = pickVariant(color, firstSize);
+    setSelectedColor(color);
     setSelectedSize(firstSize);
+    setSelectedVariantId(v?.id ?? null);
     const img = getImageForColor(images, color);
     if (img) setActiveImage(img);
     setQuantity(1);
   };
 
   const handleSizeChange = (size) => {
+    const v = pickVariant(selectedColor, size);
     setSelectedSize(size);
+    setSelectedVariantId(v?.id ?? null);
+    setQuantity(1);
+  };
+
+  const handleImageClick = (img) => {
+    setActiveImage(img.image_url);
+    if (!img.color) return;
+    const normColor = normalizeColorName(img.color);
+    if (!variants.some((v) => normalizeColorName(v.color) === normColor)) return;
+    // Select color + first size for that color, but DON'T override active image
+    setSelectedColor(normColor);
+    const firstSize = variants
+      .filter((v) => normalizeColorName(v.color) === normColor && v.is_active !== false)
+      .map((v) => v.size)
+      .filter(Boolean)[0] || "";
+    setSelectedSize(firstSize);
+    const v = pickVariant(normColor, firstSize);
+    setSelectedVariantId(v?.id ?? null);
     setQuantity(1);
   };
 
   const handleAddToCart = async () => {
-    if (!selectedVariant) return;
+    if (!selectedVariantId) return;
     try {
       await api.post("/carts/items", {
-        variant_id: selectedVariant.id,
+        variant_id: selectedVariantId,
         quantity,
       });
+      setAddedMessage("Đã thêm vào giỏ hàng");
+      refreshCart();
+      setTimeout(() => setAddedMessage(""), 2500);
     } catch (err) {
       setError(err?.response?.data?.message || "Không thể thêm vào giỏ hàng.");
     }
@@ -187,7 +222,7 @@ export default function ProductDetailPage() {
                 <button
                   key={img.id}
                   type="button"
-                  onClick={() => setActiveImage(img.image_url)}
+                  onClick={() => handleImageClick(img)}
                   className={`w-16 h-20 flex-shrink-0 rounded-md overflow-hidden border-2 transition-colors ${
                     activeImage === img.image_url
                       ? "border-neutral-900"
@@ -221,7 +256,7 @@ export default function ProductDetailPage() {
               <button
                 key={img.id}
                 type="button"
-                onClick={() => setActiveImage(img.image_url)}
+                onClick={() => handleImageClick(img)}
                 className={`w-16 h-20 flex-shrink-0 rounded-md overflow-hidden border-2 transition-colors ${
                   activeImage === img.image_url
                     ? "border-neutral-900"
@@ -384,6 +419,12 @@ export default function ProductDetailPage() {
               </button>
             </div>
           </div>
+
+          {addedMessage && (
+            <p className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-md px-4 py-3">
+              {addedMessage}
+            </p>
+          )}
 
           {error && (
             <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-md px-4 py-3">
