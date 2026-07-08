@@ -11,6 +11,14 @@ const client = createClient({
 
 client.on('error', (err) => console.log('Redis Client Error', err));
 
-await client.connect();
+let isConnected = false;
 
-export default client;
+try {
+    await client.connect();
+    isConnected = true;
+    console.log('Redis connected');
+} catch (err) {
+    console.log('Redis connection failed (non-critical):', err.message);
+}
+
+export { client as default, isConnected };
