@@ -1,9 +1,9 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../../services/api";
 import IconSpinner from "../../components/admin/IconSpinner";
 import ColorMultiSelect from "../../components/admin/ColorMultiSelect";
-import { getVariantIdForColor } from "../../utils/productImages";
+
 import {
   getParentCategories,
   getChildCategories,
@@ -25,7 +25,6 @@ function cartesianVariants(colors, sizes) {
       size,
       price: "",
       compare_price: "",
-      stock_qty: "",
     }))
   );
 }
@@ -164,7 +163,6 @@ export default function CreateProduct() {
 
   const [step, setStep] = useState(1);
   const [completedSteps, setCompletedSteps] = useState(new Set());
-  const [productId, setProductId] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -181,7 +179,6 @@ export default function CreateProduct() {
   const [colorTags, setColorTags] = useState([]);
   const [sizeTags, setSizeTags] = useState([]);
   const [variantRows, setVariantRows] = useState([]);
-  const [savedVariants, setSavedVariants] = useState([]);
 
   // Bước 3 — ảnh local + metadata (color, thumbnail)
   const [imageItems, setImageItems] = useState([]);
@@ -214,8 +211,8 @@ export default function CreateProduct() {
   };
 
   const uniqueColors = useMemo(
-    () => [...new Set(savedVariants.map((v) => v.color).filter(Boolean))],
-    [savedVariants]
+    () => [...new Set(variantRows.map((v) => v.color).filter(Boolean))],
+    [variantRows]
   );
 
   useEffect(() => {
@@ -225,35 +222,28 @@ export default function CreateProduct() {
       .catch(() => setCategories([]));
   }, []);
 
+  const scrollRef = useRef(null);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [step]);
+
   const markStepDone = (stepId) => {
     setCompletedSteps((prev) => new Set([...prev, stepId]));
   };
 
-  // ── BƯỚC 1: Tạo product, lưu product_id ──
-  const handleStep1Submit = async (e) => {
+  // ── BƯỚC 1: Validate form, chuyển bước (không gọi API) ──
+  const handleStep1Submit = (e) => {
     e.preventDefault();
     if (!productForm.category_id) {
       setError("Vui lòng chọn đầy đủ danh mục cha và danh mục con.");
       return;
     }
     setError("");
-    setSubmitting(true);
-    try {
-      const { data } = await api.post("/products/create-product", {
-        name: productForm.name.trim(),
-        category_id: Number(productForm.category_id),
-        description: productForm.description.trim() || null,
-      });
-      const id = data?.data?.id;
-      if (!id) throw new Error("Không nhận được product_id từ server.");
-      setProductId(id);
-      markStepDone(1);
-      setStep(2);
-    } catch (err) {
-      setError(err?.response?.data?.message || err.message || "Không thể tạo sản phẩm.");
-    } finally {
-      setSubmitting(false);
-    }
+    markStepDone(1);
+    setStep(2);
   };
 
   // ── BƯỚC 2: Sinh dòng biến thể (frontend) ──
@@ -272,8 +262,8 @@ export default function CreateProduct() {
     );
   };
 
-  // ── BƯỚC 2: Gọi API create-variant từng dòng ──
-  const handleStep2Submit = async () => {
+  // ── BƯỚC 2: Validate variant, chuyển bước (không gọi API) ──
+  const handleStep2Submit = () => {
     if (!variantRows.length) {
       setError('Nhấn "Tự động sinh biến thể" trước khi lưu.');
       return;
@@ -286,28 +276,8 @@ export default function CreateProduct() {
     }
 
     setError("");
-    setSubmitting(true);
-    try {
-      const created = [];
-      for (const row of variantRows) {
-        const { data } = await api.post("/product-variants/create-variant", {
-          product_id: productId,
-          color: row.color,
-          size: row.size,
-          price: Number(row.price),
-          compare_price: row.compare_price ? Number(row.compare_price) : null,
-          stock_qty: row.stock_qty ? Number(row.stock_qty) : 0,
-        });
-        created.push(data.data);
-      }
-      setSavedVariants(created);
-      markStepDone(2);
-      setStep(3);
-    } catch (err) {
-      setError(err?.response?.data?.message || "Không thể lưu biến thể.");
-    } finally {
-      setSubmitting(false);
-    }
+    markStepDone(2);
+    setStep(3);
   };
 
   // ── BƯỚC 3: Chọn file ảnh (preview local) ──
@@ -348,28 +318,10 @@ export default function CreateProduct() {
     });
   };
 
-  // ── BƯỚC 3: Upload Cloudinary qua API + gán variant_id theo màu ──
-  const uploadImage = async (item, isThumbnail) => {
-    const variantId = getVariantIdForColor(savedVariants, item.color);
-    const formData = new FormData();
-    formData.append("images", item.file);
-    formData.append("product_id", String(productId));
-    if (variantId) formData.append("variant_id", String(variantId));
-    formData.append("is_thumbnail", isThumbnail ? "true" : "false");
-
-    const { data } = await api.post("/product-images/create-product-images", formData, {
-      headers: { "Content-Type": "multipart/form-data" },
-    });
-    return data?.data?.[0];
-  };
-
+  // ── BƯỚC 3: Gửi toàn bộ dữ liệu 1 lần ──
   const handleStep3Finish = async () => {
     if (!imageItems.length) {
       setError("Vui lòng tải lên ít nhất một hình ảnh.");
-      return;
-    }
-    if (imageItems.some((i) => !i.color)) {
-      setError("Mỗi ảnh phải được gán một màu sắc.");
       return;
     }
     if (!imageItems.some((i) => i.is_thumbnail)) {
@@ -380,22 +332,35 @@ export default function CreateProduct() {
     setError("");
     setSubmitting(true);
     try {
-      const thumbItem = imageItems.find((i) => i.is_thumbnail);
-      const others = imageItems.filter((i) => !i.is_thumbnail);
+      const fd = new FormData();
+      fd.append("name", productForm.name.trim());
+      fd.append("category_id", String(Number(productForm.category_id)));
+      fd.append("description", productForm.description.trim() || "");
 
-      for (const item of others) {
-        await uploadImage(item, false);
+      const variantsPayload = variantRows.map((r) => ({
+        color: r.color,
+        size: r.size,
+        price: Number(r.price),
+        compare_price: r.compare_price ? Number(r.compare_price) : null,
+      }));
+      fd.append("variants", JSON.stringify(variantsPayload));
+
+      for (const item of imageItems) {
+        fd.append("images", item.file);
+        fd.append(`color_${item.file.name}`, item.color);
+        fd.append(`thumbnail_${item.file.name}`, item.is_thumbnail ? "true" : "false");
       }
-      if (thumbItem) {
-        await uploadImage(thumbItem, true);
-      }
+
+      await api.post("/products/create-full", fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
 
       markStepDone(3);
       navigate("/admin/products", {
         state: { message: "Tạo sản phẩm thành công!" },
       });
     } catch (err) {
-      setError(err?.response?.data?.message || "Không thể tải ảnh lên.");
+      setError(err?.response?.data?.message || "Không thể tạo sản phẩm.");
     } finally {
       setSubmitting(false);
     }
@@ -422,7 +387,7 @@ export default function CreateProduct() {
       )}
 
       {/* Panel trượt 3 bước — inner rộng 300%, mỗi step chiếm 1/3 viewport */}
-      <div className="overflow-hidden w-full">
+      <div ref={scrollRef} className="overflow-hidden w-full">
         <div
           className="flex w-[300%] transition-transform duration-500 ease-in-out"
           style={{ transform: `translateX(-${((step - 1) / 3) * 100}%)` }}
@@ -520,10 +485,6 @@ export default function CreateProduct() {
           {/* ─── STEP 2 ─── */}
           <section className="w-1/3 shrink-0 px-0.5">
             <div className="bg-white border border-neutral-200 rounded-lg p-6 space-y-6">
-              <p className="text-xs text-neutral-500">
-                Product ID: <span className="font-mono text-neutral-800">{productId}</span>
-              </p>
-
               <div className="grid sm:grid-cols-2 gap-6">
                 <ColorMultiSelect
                   label="Màu sắc"
@@ -554,7 +515,6 @@ export default function CreateProduct() {
                         <th className="px-3 py-3">Biến thể</th>
                         <th className="px-3 py-3">Giá bán</th>
                         <th className="px-3 py-3">Giá gốc</th>
-                        <th className="px-3 py-3">Tồn kho</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -582,16 +542,6 @@ export default function CreateProduct() {
                               onChange={(e) => updateVariantRow(row.key, "compare_price", e.target.value)}
                               className="w-28 border border-neutral-200 rounded px-2 py-1.5 text-sm"
                               placeholder="—"
-                            />
-                          </td>
-                          <td className="px-3 py-2">
-                            <input
-                              type="number"
-                              min="0"
-                              value={row.stock_qty}
-                              onChange={(e) => updateVariantRow(row.key, "stock_qty", e.target.value)}
-                              className="w-24 border border-neutral-200 rounded px-2 py-1.5 text-sm"
-                              placeholder="0"
                             />
                           </td>
                         </tr>
@@ -640,7 +590,7 @@ export default function CreateProduct() {
                   />
                 </label>
                 <p className="mt-2 text-xs text-neutral-400">
-                  JPG, PNG, WEBP — tối đa 5MB/ảnh. Mỗi màu chỉ cần một ảnh (dùng chung cho mọi size).
+                  JPG, PNG, WEBP — tối đa 5MB/ảnh. Gán màu nếu ảnh hiển thị theo màu, hoặc chọn "Ảnh chung" cho ảnh size chart, lifestyle.
                 </p>
               </div>
 
@@ -672,7 +622,7 @@ export default function CreateProduct() {
                           onChange={(e) => updateImageItem(item.localId, { color: e.target.value })}
                           className="w-full text-xs border border-neutral-200 rounded-md px-2 py-2 bg-white"
                         >
-                          <option value="">Chọn màu</option>
+                          <option value="">Ảnh chung (không gán màu)</option>
                           {uniqueColors.map((c) => (
                             <option key={c} value={c}>
                               {c}
