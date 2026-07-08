@@ -37,7 +37,7 @@ export const getProductImages = async (req, res) => {
             SELECT
                 id,
                 product_id,
-                variant_id,
+                color,
                 image_url,
                 public_id,
                 is_thumbnail,
@@ -84,7 +84,7 @@ export const uploadProductImages = async (req, res) => {
 
         const {
             product_id,
-            variant_id = null,
+            color = null,
             is_thumbnail = false,
         } = req.body;
 
@@ -119,30 +119,6 @@ export const uploadProductImages = async (req, res) => {
         }
 
         // =========================================
-        // CHECK VARIANT
-        // =========================================
-
-        if (variant_id) {
-
-            const variant = await pool.query(
-                `
-                SELECT id
-                FROM product_variants
-                WHERE id = $1
-                AND product_id = $2
-                `,
-                [variant_id, product_id]
-            );
-
-            if (variant.rows.length === 0) {
-                return res.status(404).json({
-                    success: false,
-                    message: 'Variant not found or does not belong to product',
-                });
-            }
-        }
-
-        // =========================================
         // HANDLE THUMBNAIL
         // =========================================
 
@@ -170,7 +146,7 @@ export const uploadProductImages = async (req, res) => {
                 `
                 INSERT INTO product_images(
                     product_id,
-                    variant_id,
+                    color,
                     image_url,
                     public_id,
                     is_thumbnail
@@ -180,7 +156,7 @@ export const uploadProductImages = async (req, res) => {
                 `,
                 [
                     product_id,
-                    variant_id,
+                    color || null,
                     file.path,
                     file.filename,
                     String(is_thumbnail) === 'true',

@@ -5,9 +5,7 @@ import IconSpinner from "../../components/admin/IconSpinner";
 import ColorSelect from "../../components/admin/ColorSelect";
 import { normalizeColorName } from "../../constants/colors";
 import {
-  getColorNameForVariantId,
   getUniqueColorsFromVariants,
-  getVariantIdForColor,
 } from "../../utils/productImages";
 import {
   getParentCategories,
@@ -74,7 +72,7 @@ export default function ProductDetail() {
 
   const [variantEdits, setVariantEdits] = useState({});
   const [savingVariantId, setSavingVariantId] = useState(null);
-  const [newVariant, setNewVariant] = useState({ color: "", size: "", price: "", compare_price: "", stock_qty: "0" });
+  const [newVariant, setNewVariant] = useState({ color: "", size: "", price: "", compare_price: "" });
   const [addingVariant, setAddingVariant] = useState(false);
 
   const [uploadingImages, setUploadingImages] = useState(false);
@@ -128,7 +126,6 @@ export default function ProductDetail() {
           size: v.size ?? "",
           price: String(v.price ?? ""),
           compare_price: v.compare_price != null ? String(v.compare_price) : "",
-          stock_qty: String(v.stock_qty ?? 0),
         };
       });
       setVariantEdits(edits);
@@ -204,7 +201,6 @@ export default function ProductDetail() {
         size: row.size,
         price: Number(row.price),
         compare_price: row.compare_price ? Number(row.compare_price) : null,
-        stock_qty: Number(row.stock_qty) || 0,
       });
       setMessage("Đã cập nhật biến thể.");
       await loadAll();
@@ -234,9 +230,8 @@ export default function ProductDetail() {
         size: newVariant.size,
         price: Number(newVariant.price),
         compare_price: newVariant.compare_price ? Number(newVariant.compare_price) : null,
-        stock_qty: Number(newVariant.stock_qty) || 0,
       });
-      setNewVariant({ color: "", size: "", price: "", compare_price: "", stock_qty: "0" });
+      setNewVariant({ color: "", size: "", price: "", compare_price: "" });
       setMessage("Đã thêm biến thể mới.");
       await loadAll();
     } catch (err) {
@@ -270,10 +265,7 @@ export default function ProductDetail() {
         const fd = new FormData();
         fd.append("images", file);
         fd.append("product_id", id);
-        const variantId = imageUploadColor
-          ? getVariantIdForColor(variants, imageUploadColor)
-          : null;
-        if (variantId) fd.append("variant_id", String(variantId));
+        if (imageUploadColor) fd.append("color", imageUploadColor);
         fd.append("is_thumbnail", images.length === 0 ? "true" : "false");
         await api.post("/product-images/create-product-images", fd, {
           headers: { "Content-Type": "multipart/form-data" },
@@ -454,7 +446,6 @@ export default function ProductDetail() {
                     <th className="px-3 py-3">Size</th>
                     <th className="px-3 py-3">Giá</th>
                     <th className="px-3 py-3">Giá gốc</th>
-                    <th className="px-3 py-3">Kho</th>
                     <th className="px-3 py-3 w-28" />
                   </tr>
                 </thead>
@@ -478,9 +469,6 @@ export default function ProductDetail() {
                       </td>
                       <td className="px-3 py-2">
                         <input type="number" min="0" value={variantEdits[v.id]?.compare_price ?? ""} onChange={(e) => updateVariantEdit(v.id, "compare_price", e.target.value)} className="w-28 border border-neutral-200 rounded px-2 py-1 text-sm" />
-                      </td>
-                      <td className="px-3 py-2">
-                        <input type="number" min="0" value={variantEdits[v.id]?.stock_qty ?? ""} onChange={(e) => updateVariantEdit(v.id, "stock_qty", e.target.value)} className="w-20 border border-neutral-200 rounded px-2 py-1 text-sm" />
                       </td>
                       <td className="px-3 py-2">
                         <div className="flex gap-1">
@@ -512,7 +500,7 @@ export default function ProductDetail() {
 
           <form onSubmit={addVariant} className="bg-white border border-neutral-200 rounded-lg p-6">
             <h3 className="text-sm font-medium mb-4">Thêm biến thể mới</h3>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-3">
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
               <ColorSelect
                 value={newVariant.color}
                 onChange={(val) => setNewVariant((v) => ({ ...v, color: val }))}
@@ -522,7 +510,6 @@ export default function ProductDetail() {
               <input placeholder="Size" value={newVariant.size} onChange={(e) => setNewVariant((v) => ({ ...v, size: e.target.value }))} className={inputClass} />
               <input type="number" placeholder="Giá bán *" required value={newVariant.price} onChange={(e) => setNewVariant((v) => ({ ...v, price: e.target.value }))} className={inputClass} />
               <input type="number" placeholder="Giá gốc" value={newVariant.compare_price} onChange={(e) => setNewVariant((v) => ({ ...v, compare_price: e.target.value }))} className={inputClass} />
-              <input type="number" placeholder="Tồn kho" value={newVariant.stock_qty} onChange={(e) => setNewVariant((v) => ({ ...v, stock_qty: e.target.value }))} className={inputClass} />
             </div>
             <button type="submit" disabled={addingVariant} className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 text-sm border border-neutral-300 rounded-md hover:bg-neutral-50 disabled:opacity-60">
               {addingVariant && <IconSpinner />}
@@ -578,9 +565,7 @@ export default function ProductDetail() {
                   </div>
                   <div className="p-3 space-y-2">
                     <p className="text-xs text-neutral-500 truncate">
-                      {img.variant_id
-                        ? getColorNameForVariantId(variants, img.variant_id) || "Màu không xác định"
-                        : "Ảnh chung"}
+                      {img.color || "Ảnh chung"}
                     </p>
                     <div className="flex flex-wrap gap-2">
                       {!img.is_thumbnail && (

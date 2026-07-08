@@ -1,4 +1,6 @@
 import pool from '../config/db.js';
+import cloudinary from '../config/cloudinary.js';
+import crypto from 'crypto';
 import {
     getCache,
     getCacheEntry,
@@ -186,6 +188,207 @@ export const getProductById = async (req, res) => {
     }
 };
 
+
+// =========================================
+// GET PRODUCT BY SLUG
+// =========================================
+export const getProductBySlug = async (req, res) => {
+    try {
+        const { slug } = req.params;
+
+        const result = await pool.query(
+            `
+            SELECT
+                p.id,
+                p.name,
+                p.slug,
+                p.description,
+                p.category_id,
+                p.created_at,
+                c.name AS category_name
+            FROM products p
+            LEFT JOIN categories c
+            ON p.category_id = c.id
+            WHERE p.slug = $1
+            `,
+            [slug]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Product not found'
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            data: result.rows[0]
+        });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({
+            success: false,
+            message: 'Server error'
+        });
+    }
+};
+
+// =========================================
+// CREATE FULL PRODUCT (atomic: product + variants + images)
+// =========================================
+export const createFullProduct = async (req, res) => {
+    const { name, category_id, description } = req.body;
+    let variants = [];
+    try {
+        variants = JSON.parse(req.body.variants || '[]');
+    } catch {
+        return res.status(400).json({ success: false, message: 'Invalid variants JSON' });
+    }
+
+    if (!name || !category_id) {
+        return res.status(400).json({ success: false, message: 'Name and category are required' });
+    }
+    if (!Array.isArray(variants) || variants.length === 0) {
+        return res.status(400).json({ success: false, message: 'At least one variant is required' });
+    }
+    for (const v of variants) {
+        if (!v.price || Number(v.price) <= 0) {
+            return res.status(400).json({ success: false, message: 'Each variant needs a valid price' });
+        }
+    }
+
+    const files = req.files || [];
+    const uploadedCloudinaryIds = [];
+
+    const dbClient = await pool.connect();
+    try {
+        await dbClient.query('BEGIN');
+
+        const category = await dbClient.query(
+            `SELECT id FROM categories WHERE id = $1`,
+            [category_id]
+        );
+        if (category.rows.length === 0) {
+            await dbClient.query('ROLLBACK');
+            return res.status(404).json({ success: false, message: 'Category not found' });
+        }
+
+        const childCategory = await dbClient.query(
+            `SELECT id FROM categories WHERE parent_id = $1 LIMIT 1`,
+            [category_id]
+        );
+        if (childCategory.rows.length > 0) {
+            await dbClient.query('ROLLBACK');
+            return res.status(400).json({ success: false, message: 'Cannot assign product to parent category' });
+        }
+
+        let slug = generateSlug(name);
+        const existing = await dbClient.query(
+            `SELECT id FROM products WHERE slug LIKE $1`,
+            [`${slug}%`]
+        );
+        if (existing.rows.length > 0) {
+            slug = `${slug}-${existing.rows.length + 1}`;
+        }
+
+        const productResult = await dbClient.query(
+            `INSERT INTO products (category_id, name, slug, description) VALUES ($1, $2, $3, $4) RETURNING id, name, slug, description, created_at`,
+            [category_id, name, slug, description || null]
+        );
+        const productId = productResult.rows[0].id;
+
+        const createdVariants = [];
+        for (const v of variants) {
+            const cleanColor = (v.color || '').replace(/\s+/g, '-').toUpperCase();
+            const cleanSize = (v.size || '').replace(/\s+/g, '-').toUpperCase();
+            const random = crypto.randomBytes(4).toString('hex').toUpperCase();
+            const sku = `SKU-${productId}-${cleanColor}-${cleanSize}-${random}`;
+
+            const result = await dbClient.query(
+                `INSERT INTO product_variants(product_id, color, size, sku, price, compare_price) VALUES($1, $2, $3, $4, $5, $6) RETURNING id, product_id, color, size, sku, price, compare_price`,
+                [productId, v.color || '', v.size || '', sku, Number(v.price), v.compare_price ? Number(v.compare_price) : null]
+            );
+            createdVariants.push(result.rows[0]);
+        }
+
+        const createdImages = [];
+        for (const file of files) {
+            const color = req.body[`color_${file.originalname}`] || null;
+            const isThumbnail = req.body[`thumbnail_${file.originalname}`] === 'true';
+
+            const b64 = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
+            const timestamp = Date.now();
+            const cleanName = file.originalname
+                .split('.')[0]
+                .toLowerCase()
+                .replace(/\s+/g, '-')
+                .replace(/[^a-z0-9-_]/g, '');
+
+            let uploadResult;
+            try {
+                uploadResult = await cloudinary.uploader.upload(b64, {
+                    public_id: `${cleanName}-${timestamp}`,
+                    folder: color
+                        ? `fashion-store/products/${productId}/colors/${color}`
+                        : `fashion-store/products/${productId}/general`,
+                    resource_type: 'image',
+                    allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
+                    transformation: [{ width: 1200, crop: 'limit', quality: 'auto:eco', fetch_format: 'auto' }],
+                });
+                uploadedCloudinaryIds.push(uploadResult.public_id);
+            } catch (uploadErr) {
+                await dbClient.query('ROLLBACK');
+                for (const pid of uploadedCloudinaryIds) {
+                    await cloudinary.uploader.destroy(pid).catch(() => {});
+                }
+                return res.status(500).json({ success: false, message: 'Image upload failed: ' + uploadErr.message });
+            }
+
+            const sortOrder = createdImages.length;
+
+            const imgResult = await dbClient.query(
+                `INSERT INTO product_images (product_id, color, image_url, public_id, is_thumbnail, sort_order) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+                [productId, color, uploadResult.secure_url, uploadResult.public_id, isThumbnail, sortOrder]
+            );
+            createdImages.push(imgResult.rows[0]);
+        }
+
+        if (createdImages.length > 0 && !createdImages.some((i) => i.is_thumbnail)) {
+            await dbClient.query(
+                `UPDATE product_images SET is_thumbnail = true WHERE id = $1`,
+                [createdImages[0].id]
+            );
+            createdImages[0].is_thumbnail = true;
+        }
+
+        await dbClient.query('COMMIT');
+
+        await incrCache('products:version');
+
+        return res.status(201).json({
+            success: true,
+            message: 'Product created successfully',
+            data: {
+                product: productResult.rows[0],
+                variants: createdVariants,
+                images: createdImages,
+            }
+        });
+    } catch (error) {
+        await dbClient.query('ROLLBACK').catch(() => {});
+        for (const pid of uploadedCloudinaryIds) {
+            await cloudinary.uploader.destroy(pid).catch(() => {});
+        }
+        console.error(error);
+        if (error.code === '23505') {
+            return res.status(409).json({ success: false, message: 'Duplicate variant color/size' });
+        }
+        return res.status(500).json({ success: false, message: 'Server error' });
+    } finally {
+        dbClient.release();
+    }
+};
 
 // =========================================
 // CREATE PRODUCT
