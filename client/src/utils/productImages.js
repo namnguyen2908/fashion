@@ -1,18 +1,6 @@
 import { normalizeColorKey, normalizeColorName, sortColors } from "../constants/colors";
 
-/** Một ảnh gắn với bất kỳ variant nào cùng màu — dùng chung cho mọi size. */
-export function getVariantIdsForColor(variants, color) {
-  const key = normalizeColorKey(color);
-  return variants
-    .filter((v) => normalizeColorKey(v.color) === key)
-    .map((v) => v.id);
-}
-
-export function getVariantIdForColor(variants, color) {
-  const ids = getVariantIdsForColor(variants, color);
-  return ids[0] ?? null;
-}
-
+/** Lấy danh sách màu duy nhất từ variants. */
 export function getUniqueColorsFromVariants(variants) {
   return sortColors([
     ...new Set(
@@ -21,20 +9,17 @@ export function getUniqueColorsFromVariants(variants) {
   ]);
 }
 
-export function getColorNameForVariantId(variants, variantId) {
-  const variant = variants.find((v) => v.id === variantId);
-  return variant ? normalizeColorName(variant.color) : null;
-}
-
 /** Ảnh hiển thị khi hover/chọn một màu trên storefront. */
-export function getImageForColor(images, variants, color) {
-  const variantIds = new Set(getVariantIdsForColor(variants, color));
-  if (variantIds.size > 0) {
-    const match = images.find(
-      (img) => img.variant_id && variantIds.has(img.variant_id)
-    );
-    if (match?.image_url) return match.image_url;
+export function getImageForColor(images, color) {
+  if (!color) {
+    const thumb = images.find((img) => img.is_thumbnail);
+    return thumb?.image_url || images[0]?.image_url || null;
   }
+
+  const key = normalizeColorKey(color);
+  const match = images.find((img) => img.color && normalizeColorKey(img.color) === key);
+  if (match?.image_url) return match.image_url;
+
   const thumb = images.find((img) => img.is_thumbnail);
   return thumb?.image_url || images[0]?.image_url || null;
 }

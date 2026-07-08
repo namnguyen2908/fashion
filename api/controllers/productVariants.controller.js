@@ -36,7 +36,7 @@ export const getVariantsByProductId = async (req, res) => {
 
         const result = await pool.query(
             `
-            SELECT id, product_id, color, size, sku, price, compare_price, stock_qty, is_active, created_at, updated_at
+            SELECT id, product_id, color, size, sku, price, compare_price, is_active, created_at, updated_at
             FROM product_variants
             WHERE product_id = $1 AND is_active = true
             ORDER BY created_at DESC
@@ -78,7 +78,7 @@ export const getVariantById = async (req, res) => {
 
         const result = await pool.query(
             `
-            SELECT pv.id, pv.product_id, pv.color, pv.size, pv.sku, pv.price, pv.compare_price, pv.stock_qty, pv.is_active, pv.created_at, pv.updated_at,
+            SELECT pv.id, pv.product_id, pv.color, pv.size, pv.sku, pv.price, pv.compare_price, pv.is_active, pv.created_at, pv.updated_at,
                    p.name AS product_name
             FROM product_variants pv
             LEFT JOIN products p ON pv.product_id = p.id
@@ -112,7 +112,7 @@ export const adminGetVariantById = async (req, res) => {
 
         const result = await pool.query(
             `
-            SELECT pv.id, pv.product_id, pv.color, pv.size, pv.sku, pv.price, pv.compare_price, pv.stock_qty, pv.is_active, pv.created_at, pv.updated_at,
+            SELECT pv.id, pv.product_id, pv.color, pv.size, pv.sku, pv.price, pv.compare_price, pv.is_active, pv.created_at, pv.updated_at,
                    p.name AS product_name
             FROM product_variants pv
             LEFT JOIN products p ON pv.product_id = p.id
@@ -143,15 +143,14 @@ export const createVariant = async (req, res) => {
             size = '',
             price,
             compare_price = null,
-            stock_qty = 0,
             is_active = true
         } = req.body;
 
         if (!product_id || price === undefined) {
             return res.status(400).json({ success: false, message: 'Product and Price are required' });
         }
-        if (Number(price) <= 0 || Number(stock_qty) < 0) {
-            return res.status(400).json({ success: false, message: 'Invalid price or stock quantity' });
+        if (Number(price) <= 0) {
+            return res.status(400).json({ success: false, message: 'Invalid price' });
         }
 
         // TỐI ƯU HIỆU NĂNG: Loại bỏ SELECT check trùng bằng code. Tận dụng tối đa Partial Unique Index từ DB.
@@ -162,11 +161,11 @@ export const createVariant = async (req, res) => {
 
         const result = await pool.query(
             `
-            INSERT INTO product_variants(product_id, color, size, sku, price, compare_price, stock_qty, is_active)
-            VALUES($1, $2, $3, $4, $5, $6, $7, $8)
-            RETURNING id, product_id, color, size, sku, price, compare_price, stock_qty, is_active, created_at, updated_at
+            INSERT INTO product_variants(product_id, color, size, sku, price, compare_price, is_active)
+            VALUES($1, $2, $3, $4, $5, $6, $7)
+            RETURNING id, product_id, color, size, sku, price, compare_price, is_active, created_at, updated_at
             `,
-            [product_id, color, size, sku, price, compare_price, stock_qty, is_active]
+            [product_id, color, size, sku, price, compare_price, is_active]
         );
 
         // Làm sạch Cache danh sách để Client cập nhật sản phẩm mới
@@ -191,18 +190,15 @@ export const createVariant = async (req, res) => {
 export const updateVariant = async (req, res) => {
     try {
         const { id } = req.params;
-        const { color, size, price, compare_price, stock_qty, is_active } = req.body;
+        const { color, size, price, compare_price, is_active } = req.body;
 
         if (color === undefined && size === undefined && price === undefined && 
-            compare_price === undefined && stock_qty === undefined && is_active === undefined) {
+            compare_price === undefined && is_active === undefined) {
             return res.status(400).json({ success: false, message: 'No fields to update' });
         }
 
         if (price !== undefined && Number(price) <= 0) {
             return res.status(400).json({ success: false, message: 'Price must be greater than 0' });
-        }
-        if (stock_qty !== undefined && Number(stock_qty) < 0) {
-            return res.status(400).json({ success: false, message: 'Stock cannot be negative' });
         }
 
         // Lấy thông tin gốc để biết sản phẩm cha phục vụ xóa cache
@@ -223,7 +219,6 @@ export const updateVariant = async (req, res) => {
         if (size !== undefined) { values.push(size); fields.push(`size = $${values.length}`); }
         if (price !== undefined) { values.push(price); fields.push(`price = $${values.length}`); }
         if (compare_price !== undefined) { values.push(compare_price); fields.push(`compare_price = $${values.length}`); }
-        if (stock_qty !== undefined) { values.push(stock_qty); fields.push(`stock_qty = $${values.length}`); }
         if (is_active !== undefined) { values.push(is_active); fields.push(`is_active = $${values.length}`); }
 
         fields.push(`updated_at = CURRENT_TIMESTAMP`);
@@ -233,7 +228,7 @@ export const updateVariant = async (req, res) => {
             UPDATE product_variants
             SET ${fields.join(', ')}
             WHERE id = $${values.length}
-            RETURNING id, product_id, color, size, sku, price, compare_price, stock_qty, is_active, created_at, updated_at
+            RETURNING id, product_id, color, size, sku, price, compare_price, is_active, created_at, updated_at
         `;
 
         const result = await pool.query(query, values);

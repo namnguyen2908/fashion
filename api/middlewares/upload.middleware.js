@@ -38,19 +38,13 @@ const buildFolder = (req) => {
 
     const productId = req.body.product_id || 'unknown-product';
 
-    const variantId = req.body.variant_id;
+    const color = req.body.color;
 
-    // PRODUCT ROOT
-    // fashion-store/products/1
-
-    if (!variantId) {
+    if (!color) {
         return `fashion-store/products/${productId}/general`;
     }
 
-    // VARIANT IMAGES
-    // fashion-store/products/1/variants/12
-
-    return `fashion-store/products/${productId}/variants/${variantId}`;
+    return `fashion-store/products/${productId}/colors/${color}`;
 };
 
 // ============================================
