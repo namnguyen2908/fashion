@@ -3,7 +3,9 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import { ADMIN_ROLES } from './constants/roles'
+import PublicLayout from './layouts/PublicLayout';
 import HomePage from './pages/HomePage';
+import ProductDetailPage from './pages/products/ProductDetailPage';
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
 import ForgotPassword from './pages/auth/ForgotPassword';
@@ -18,7 +20,10 @@ function App() {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<HomePage />} />
+          <Route element={<PublicLayout />}>
+            <Route path="/" element={<HomePage />} />
+            <Route path="/products/:slug" element={<ProductDetailPage />} />
+          </Route>
           <Route
             path="/admin"
             element={
