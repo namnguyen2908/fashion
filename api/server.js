@@ -2,6 +2,7 @@ import express from "express";
 import dotenv from "dotenv";
 import cookieParser from "cookie-parser";
 import cors from "cors";
+import prisma from "./config/prisma.js";
 
 //import routes
 import authRoutes from "./routes/auth.js";
@@ -10,6 +11,7 @@ import productRoutes from "./routes/product.js";
 import productVariantsRoutes from "./routes/productVariants.js";
 import productImagesRoutes from "./routes/productImages.js"
 import bannerRoutes from "./routes/banner.js";
+import cartRoutes from "./routes/cart.js";
 
 
 dotenv.config();
@@ -33,12 +35,31 @@ app.use("/api/products", productRoutes);
 app.use("/api/product-variants", productVariantsRoutes);
 app.use("/api/product-images", productImagesRoutes);
 app.use("/api/banners", bannerRoutes);
+app.use("/api/carts", cartRoutes);
 
 
 app.get("/", (req, res) => {
   res.send("Hello World!");
 });
 
-app.listen(process.env.PORT, () => {
-  console.log(`Server is running on port ${process.env.PORT}`);
+const server = app.listen(process.env.PORT, async () => {
+  try {
+    await prisma.$connect();
+    console.log(`Server is running on port ${process.env.PORT}`);
+  } catch (error) {
+    console.error("Failed to connect to database via Prisma:", error);
+    process.exit(1);
+  }
 });
+
+const gracefulShutdown = async (signal) => {
+  console.log(`\nReceived ${signal}. Shutting down gracefully...`);
+  await prisma.$disconnect();
+  server.close(() => {
+    console.log("Server closed.");
+    process.exit(0);
+  });
+};
+
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
