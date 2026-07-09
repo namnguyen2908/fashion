@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useCart } from "../../context/CartContext";
 import { useAuth } from "../../context/AuthContext";
 import { formatVND } from "../../utils/format";
@@ -54,6 +54,7 @@ function QuantityStepper({ value, onIncrease, onDecrease, disabled }) {
 }
 
 export default function CartPage() {
+  const navigate = useNavigate();
   const { refreshCart } = useCart();
   const { isAuthenticated } = useAuth();
 
@@ -303,7 +304,7 @@ export default function CartPage() {
 
             <button
               type="button"
-              onClick={() => alert("Tính năng thanh toán đang được phát triển.")}
+              onClick={() => navigate("/checkout")}
               className="w-full mt-6 px-6 py-3 text-sm font-medium bg-black text-white rounded-lg hover:bg-neutral-800 transition-all active:scale-[0.98]"
             >
               Thanh toán

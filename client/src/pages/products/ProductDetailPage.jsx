@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import api from "../../services/api";
 import { useCart } from "../../context/CartContext";
 import { formatVND, calcDiscountLabel, pickDisplayVariant } from "../../utils/format";
@@ -8,6 +8,7 @@ import { getColorSwatchStyle, normalizeColorName } from "../../constants/colors"
 import { cloudinaryThumb } from "../../utils/cloudinary";
 
 export default function ProductDetailPage() {
+  const navigate = useNavigate();
   const { slug } = useParams();
   const { refreshCart } = useCart();
 
@@ -181,6 +182,20 @@ export default function ProductDetailPage() {
       setAddedMessage("Đã thêm vào giỏ hàng");
       refreshCart();
       setTimeout(() => setAddedMessage(""), 2500);
+    } catch (err) {
+      setError(err?.response?.data?.message || "Không thể thêm vào giỏ hàng.");
+    }
+  };
+
+  const handleBuyNow = async () => {
+    if (!selectedVariantId) return;
+    try {
+      await api.post("/carts/items", {
+        variant_id: selectedVariantId,
+        quantity,
+      });
+      refreshCart();
+      navigate('/checkout');
     } catch (err) {
       setError(err?.response?.data?.message || "Không thể thêm vào giỏ hàng.");
     }
@@ -412,6 +427,7 @@ export default function ProductDetailPage() {
               </button>
               <button
                 type="button"
+                onClick={handleBuyNow}
                 disabled={!selectedVariant}
                 className="flex-[2] px-6 py-2.5 text-sm bg-black text-white rounded-md hover:bg-neutral-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >

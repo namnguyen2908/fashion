@@ -54,9 +54,14 @@ model order_items {
 model orders {
   id                 Int           @id @default(autoincrement())
   user_id            Int?
-  status             String?       @default("PENDING") @db.VarChar(50)
-  total_price        Decimal       @db.Decimal(12, 2)
+  status             String?       @default("PENDING") @db.VarChar(50) // PENDING, CONFIRMED, SHIPPING, DELIVERED, CANCELLED
+  total_amount       Decimal       @db.Decimal(12, 2) // Rename from total_price for clarity
   payment_method     String?       @db.VarChar(50)
+  payment_status     String?       @default("PENDING") @db.VarChar(50) // PENDING, PAID, FAILED
+  payment_code       String?       @db.VarChar(100) // Payment code for SePay
+  payment_content    String?       @db.VarChar(255) // Payment content (THANHTOANDHxxx)
+  paid_at            DateTime?     @db.Timestamp(6) // When payment was completed
+  transaction_id    String?       @db.VarChar(100) // SePay transaction ID
   shipping_full_name String?       @db.VarChar(255)
   shipping_phone     String?       @db.VarChar(20)
   shipping_address   String?
@@ -65,6 +70,7 @@ model orders {
   users              users?        @relation(fields: [user_id], references: [id], onUpdate: NoAction)
 
   @@index([user_id], map: "idx_orders_user")
+  @@index([payment_code], map: "idx_orders_payment_code")
 }
 
 model product_images {
