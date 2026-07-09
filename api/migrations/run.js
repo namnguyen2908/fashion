@@ -6,11 +6,19 @@ import pool from '../config/db.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const sql = fs.readFileSync(join(__dirname, '001_inventory_and_color_images.sql'), 'utf8');
+const migrations = [
+    '001_inventory_and_color_images.sql',
+    '002_add_payment_fields_to_orders.sql',
+    '003_add_bank_info_to_orders.sql',
+];
 
 try {
-    await pool.query(sql);
-    console.log('Migration ran successfully');
+    for (const file of migrations) {
+        const sql = fs.readFileSync(join(__dirname, file), 'utf8');
+        await pool.query(sql);
+        console.log(`Migration ${file} ran successfully`);
+    }
+    console.log('All migrations completed');
 } catch (error) {
     console.error('Migration failed:', error);
 } finally {

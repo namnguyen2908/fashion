@@ -11,6 +11,11 @@ import CartPage from './pages/cart/CartPage';
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
 import ForgotPassword from './pages/auth/ForgotPassword';
+import CheckoutPage from './pages/payment/CheckoutPage';
+import PaymentPage from './pages/payment/PaymentPage';
+import PaymentSuccessPage from './pages/payment/PaymentSuccessPage';
+import OrdersPage from './pages/payment/OrdersPage';
+import OrderDetailPage from './pages/payment/OrderDetailPage';
 import AdminLayout from './layouts/AdminLayout';
 import CategoryDashboard from './pages/admin/CategoryDashboard';
 import CreateProduct from './pages/admin/CreateProduct';
@@ -27,6 +32,11 @@ function App() {
             <Route path="/" element={<HomePage />} />
             <Route path="/products/:slug" element={<ProductDetailPage />} />
             <Route path="/cart" element={<CartPage />} />
+            <Route path="/checkout" element={<CheckoutPage />} />
+            <Route path="/payment/:orderId" element={<PaymentPage />} />
+            <Route path="/payment/success/:orderId" element={<PaymentSuccessPage />} />
+            <Route path="/orders" element={<OrdersPage />} />
+            <Route path="/orders/:orderId" element={<OrderDetailPage />} />
           </Route>
           <Route
             path="/admin"

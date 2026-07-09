@@ -6,12 +6,24 @@ import { isAdminRole } from "../constants/roles";
 import { IconSearch, IconUser, IconBag, IconChevron, IconClose, IconMenu } from "./Icons";
 
 export default function SiteHeader({ categoryTree }) {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const { totalItems } = useCart();
   const [megaOpen, setMegaOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [mobileProductsOpen, setMobileProductsOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const userMenuRef = useRef(null);
   const megaTimeout = useRef(null);
+
+  useEffect(() => {
+    const handleClick = (e) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target)) {
+        setUserMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
 
   const openMega = () => {
     clearTimeout(megaTimeout.current);
@@ -110,13 +122,47 @@ export default function SiteHeader({ categoryTree }) {
             </Link>
           ) : null}
 
-          <Link
-            to={isAdminRole(user?.role) ? "/admin/products" : "/login"}
-            aria-label="Tài khoản"
-            className={`p-1 transition-colors ${iconTone}`}
-          >
-            <IconUser />
-          </Link>
+          {user ? (
+            <div className="relative" ref={userMenuRef}>
+              <button
+                type="button"
+                aria-label="Tài khoản"
+                className={`p-1 transition-colors ${iconTone}`}
+                onClick={() => setUserMenuOpen((v) => !v)}
+              >
+                <IconUser />
+              </button>
+              {userMenuOpen && (
+                <div className="absolute right-0 top-full mt-2 w-44 bg-white border border-neutral-200 rounded-xl shadow-lg z-50 py-2">
+                  <div className="px-4 py-2 text-sm text-neutral-500 border-b border-neutral-100 truncate">
+                    {user.email}
+                  </div>
+                  <Link
+                    to="/orders"
+                    className="block px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
+                    onClick={() => setUserMenuOpen(false)}
+                  >
+                    Đơn hàng của tôi
+                  </Link>
+                  <button
+                    type="button"
+                    className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                    onClick={() => { setUserMenuOpen(false); logout(); }}
+                  >
+                    Đăng xuất
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <Link
+              to="/login"
+              aria-label="Đăng nhập"
+              className={`p-1 transition-colors ${iconTone}`}
+            >
+              <IconUser />
+            </Link>
+          )}
 
           <Link
             to="/cart"
@@ -236,6 +282,21 @@ export default function SiteHeader({ categoryTree }) {
                 <IconSearch className="w-4 h-4" />
               </span>
             </label>
+
+            {user && (
+              <div className="pt-6 space-y-2 border-t border-neutral-100">
+                <p className="text-xs text-neutral-400 uppercase tracking-widest">
+                  {user.email}
+                </p>
+                <button
+                  type="button"
+                  className="w-full text-left py-2 text-sm text-red-600 font-medium"
+                  onClick={() => { setMobileOpen(false); logout(); }}
+                >
+                  Đăng xuất
+                </button>
+              </div>
+            )}
           </nav>
         </div>
       )}
