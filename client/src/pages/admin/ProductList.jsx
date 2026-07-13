@@ -75,18 +75,18 @@ export default function ProductList() {
   const [total, setTotal] = useState(0);
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
+  const [categories, setCategories] = useState([]);
+  const [categoryFilter, setCategoryFilter] = useState("");
 
   const fetchProducts = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const { data } = await api.get("/products", {
-        params: {
-          page,
-          limit: 15,
-          search: search.trim(),
-        },
-      });
+      const params = { page, limit: 15 };
+      if (search.trim()) params.search = search.trim();
+      if (categoryFilter) params.category = categoryFilter;
+
+      const { data } = await api.get("/products", { params });
       setProducts(data?.data ?? []);
       setTotalPages(data?.totalPages ?? 1);
       setTotal(data?.total ?? 0);
@@ -96,10 +96,11 @@ export default function ProductList() {
     } finally {
       setLoading(false);
     }
-  }, [page, search]);
+  }, [page, search, categoryFilter]);
 
   useEffect(() => {
     fetchProducts();
+    api.get("/categories").then(({ data }) => setCategories(Array.isArray(data) ? data : [])).catch(() => {});
   }, [fetchProducts]);
 
   const handleSearch = (e) => {
@@ -145,7 +146,18 @@ export default function ProductList() {
         </Link>
       </div>
 
-      <form onSubmit={handleSearch} className="mb-6 flex gap-2">
+      <div className="mb-6 flex flex-col sm:flex-row gap-2">
+        <select
+          value={categoryFilter}
+          onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }}
+          className="w-full sm:w-auto border border-neutral-200 rounded-md px-4 py-2 text-sm text-neutral-900 bg-white outline-none focus:border-neutral-400 transition-colors"
+        >
+          <option value="">Tất cả danh mục</option>
+          {categories.map((cat) => (
+            <option key={cat.id} value={cat.id}>{cat.name}</option>
+          ))}
+        </select>
+      <form onSubmit={handleSearch} className="flex gap-2 flex-1">
         <input
           type="search"
           value={searchInput}
@@ -173,6 +185,7 @@ export default function ProductList() {
           </button>
         )}
       </form>
+      </div>
 
       {error && (
         <p className="mb-6 text-sm text-red-600 bg-red-50 border border-red-100 rounded-md px-4 py-3">
