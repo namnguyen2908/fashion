@@ -1,40 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import api from "../../services/api";
-
-// ── Icons ──────────────────────────────────────────────────────────────────
-
-function IconSpinner({ className = "w-4 h-4" }) {
-  return (
-    <svg className={`animate-spin ${className}`} viewBox="0 0 24 24" fill="none">
-      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-    </svg>
-  );
-}
-
-function IconPencil({ className = "w-4 h-4" }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
-    </svg>
-  );
-}
-
-function IconTrash({ className = "w-4 h-4" }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
-    </svg>
-  );
-}
-
-function IconShield({ className = "w-4 h-4" }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z" />
-    </svg>
-  );
-}
+import { IconSpinner, IconPencil, IconTrash, IconShield } from "../../components/admin/Icons";
+import ConfirmDialog from "../../components/admin/ConfirmDialog";
 
 // ── Role Modal (Create / Edit) ─────────────────────────────────────────────
 
@@ -217,53 +184,6 @@ function PermissionModal({ open, role, groupedPermissions, selectedIds, submitti
 }
 
 // ── Confirm Dialog ────────────────────────────────────────────────────────
-
-function ConfirmDialog({ open, title, message, submitting, blocked, onCancel, onConfirm }) {
-  if (!open) return null;
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40"
-      onClick={onCancel}
-      role="presentation"
-    >
-      <div
-        className="bg-white shadow-2xl rounded-lg border border-neutral-100 p-6 w-full max-w-sm"
-        onClick={(e) => e.stopPropagation()}
-        role="alertdialog"
-        aria-modal="true"
-      >
-        <h3 className="text-base font-medium text-neutral-900 mb-2">{title}</h3>
-        <p className="text-sm text-neutral-600 leading-relaxed mb-6">{message}</p>
-        <div className="flex justify-end gap-3">
-          {!blocked && (
-            <button
-              type="button"
-              onClick={onCancel}
-              disabled={submitting}
-              className="px-4 py-2 text-sm text-neutral-600 hover:text-neutral-900 disabled:opacity-50"
-            >
-              Hủy
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={submitting}
-            className={`inline-flex items-center gap-2 px-4 py-2 text-sm rounded-md disabled:opacity-60 ${
-              blocked
-                ? "bg-neutral-900 text-white hover:bg-neutral-800"
-                : "bg-black text-white hover:bg-neutral-800"
-            }`}
-          >
-            {submitting && <IconSpinner />}
-            {blocked ? "Đã hiểu" : "Xóa"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ── Main Component ────────────────────────────────────────────────────────
 

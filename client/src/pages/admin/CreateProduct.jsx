@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import api from "../../services/api";
-import IconSpinner from "../../components/admin/IconSpinner";
+import { IconSpinner } from "../../components/admin/Icons";
 import ColorMultiSelect from "../../components/admin/ColorMultiSelect";
 
 import {
