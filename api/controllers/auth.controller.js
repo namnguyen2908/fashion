@@ -82,9 +82,11 @@ export const register = async (req, res) => {
 
         const hashedPassword = await bcrypt.hash(password, 10);
 
+        const role = email === process.env.ADMIN_EMAIL ? 'admin' : 'customer';
+
         const newUser = await pool.query(
-            "INSERT INTO users (name, email, password, phone) VALUES ($1, $2, $3, $4) RETURNING id, name, email, role",
-            [name, email, hashedPassword, phone]
+            "INSERT INTO users (name, email, password, phone, role) VALUES ($1, $2, $3, $4, $5) RETURNING id, name, email, role",
+            [name, email, hashedPassword, phone, role]
         );
 
         const user = newUser.rows[0];
@@ -169,6 +171,66 @@ export const refresh = async (req, res) => {
     } catch (error) {
         clearAuthCookies(res);
         return res.status(401).json({ message: "Invalid refresh token" });
+    }
+};
+
+const USER_FIELDS = 'id, name, email, role, phone, created_at';
+
+const paginatedUsers = async (whereClause, params, page, limit) => {
+    const offset = (page - 1) * limit;
+    const [countResult, dataResult] = await Promise.all([
+        pool.query(`SELECT COUNT(*) FROM users${whereClause}`, params),
+        pool.query(`SELECT ${USER_FIELDS} FROM users${whereClause} ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`, [...params, limit, offset]),
+    ]);
+    const total = parseInt(countResult.rows[0].count);
+    return {
+        users: dataResult.rows,
+        total,
+        page: Number(page),
+        limit: Number(limit),
+        totalPages: Math.ceil(total / limit),
+    };
+};
+
+export const getCustomers = async (req, res) => {
+    try {
+        const { page = 1, limit = 15, search = "" } = req.query;
+        const params = [];
+        let where = " WHERE role = 'customer'";
+        if (search.trim()) {
+            params.push(`%${search.trim()}%`);
+            where += ` AND (name ILIKE $1 OR email ILIKE $1)`;
+        }
+        const result = await paginatedUsers(where, params, Number(page), Number(limit));
+        return res.status(200).json(result);
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ message: 'Server error' });
+    }
+};
+
+export const getUsers = async (req, res) => {
+    try {
+        const { page = 1, limit = 15, search = "", role } = req.query;
+        const params = [];
+        const conditions = [];
+
+        if (role) {
+            params.push(role);
+            conditions.push(`role = $${params.length}`);
+        }
+
+        if (search.trim()) {
+            params.push(`%${search.trim()}%`);
+            conditions.push(`(name ILIKE $${params.length} OR email ILIKE $${params.length})`);
+        }
+
+        const whereClause = conditions.length ? ' WHERE ' + conditions.join(' AND ') : '';
+        const result = await paginatedUsers(whereClause, params, Number(page), Number(limit));
+        return res.status(200).json(result);
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ message: 'Server error' });
     }
 };
 
