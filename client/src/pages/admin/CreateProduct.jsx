@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import api from "../../services/api";
 import IconSpinner from "../../components/admin/IconSpinner";
 import ColorMultiSelect from "../../components/admin/ColorMultiSelect";
@@ -160,11 +160,16 @@ function TagInput({ label, tags, onChange, placeholder }) {
 
 export default function CreateProduct() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const resumeProductId = searchParams.get("productId");
+  const resumeStep = Number(searchParams.get("step")) || 1;
+  const isResume = !!resumeProductId;
 
-  const [step, setStep] = useState(1);
-  const [completedSteps, setCompletedSteps] = useState(new Set());
+  const [step, setStep] = useState(isResume ? resumeStep : 1);
+  const [completedSteps, setCompletedSteps] = useState(new Set(isResume ? [1] : []));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [productId, setProductId] = useState(resumeProductId ? Number(resumeProductId) : null);
 
   // Bước 1
   const [categories, setCategories] = useState([]);
@@ -179,6 +184,8 @@ export default function CreateProduct() {
   const [colorTags, setColorTags] = useState([]);
   const [sizeTags, setSizeTags] = useState([]);
   const [variantRows, setVariantRows] = useState([]);
+  const [savingVariants, setSavingVariants] = useState(false);
+  const [savedVariantKeys, setSavedVariantKeys] = useState(new Set());
 
   // Bước 3 — ảnh local + metadata (color, thumbnail)
   const [imageItems, setImageItems] = useState([]);
@@ -234,16 +241,29 @@ export default function CreateProduct() {
     setCompletedSteps((prev) => new Set([...prev, stepId]));
   };
 
-  // ── BƯỚC 1: Validate form, chuyển bước (không gọi API) ──
-  const handleStep1Submit = (e) => {
+  // ── BƯỚC 1: Tạo sản phẩm → API → lấy productId ──
+  const handleStep1Submit = async (e) => {
     e.preventDefault();
     if (!productForm.category_id) {
       setError("Vui lòng chọn đầy đủ danh mục cha và danh mục con.");
       return;
     }
     setError("");
-    markStepDone(1);
-    setStep(2);
+    setSubmitting(true);
+    try {
+      const { data } = await api.post("/products/create-product", {
+        name: productForm.name.trim(),
+        category_id: Number(productForm.category_id),
+        description: productForm.description.trim() || null,
+      });
+      setProductId(data.data.id);
+      markStepDone(1);
+      setStep(2);
+    } catch (err) {
+      setError(err?.response?.data?.message || "Không thể tạo sản phẩm.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   // ── BƯỚC 2: Sinh dòng biến thể (frontend) ──
@@ -262,8 +282,8 @@ export default function CreateProduct() {
     );
   };
 
-  // ── BƯỚC 2: Validate variant, chuyển bước (không gọi API) ──
-  const handleStep2Submit = () => {
+  // ── BƯỚC 2: Lưu từng biến thể qua API ──
+  const handleStep2Submit = async () => {
     if (!variantRows.length) {
       setError('Nhấn "Tự động sinh biến thể" trước khi lưu.');
       return;
@@ -276,8 +296,27 @@ export default function CreateProduct() {
     }
 
     setError("");
-    markStepDone(2);
-    setStep(3);
+    setSavingVariants(true);
+    try {
+      await Promise.all(
+        variantRows.map(async (row) => {
+          const { data } = await api.post("/product-variants/create-variant", {
+            product_id: productId,
+            color: row.color,
+            size: row.size,
+            price: Number(row.price),
+            list_price: row.list_price ? Number(row.list_price) : null,
+          });
+          return data;
+        })
+      );
+      markStepDone(2);
+      setStep(3);
+    } catch (err) {
+      setError(err?.response?.data?.message || "Không thể lưu biến thể.");
+    } finally {
+      setSavingVariants(false);
+    }
   };
 
   // ── BƯỚC 3: Chọn file ảnh (preview local) ──
@@ -318,7 +357,9 @@ export default function CreateProduct() {
     });
   };
 
-  // ── BƯỚC 3: Gửi toàn bộ dữ liệu 1 lần ──
+  const [uploadingImages, setUploadingImages] = useState(false);
+
+  // ── BƯỚC 3: Upload từng ảnh qua API ──
   const handleStep3Finish = async () => {
     if (!imageItems.length) {
       setError("Vui lòng tải lên ít nhất một hình ảnh.");
@@ -330,52 +371,49 @@ export default function CreateProduct() {
     }
 
     setError("");
-    setSubmitting(true);
+    setUploadingImages(true);
     try {
-      const fd = new FormData();
-      fd.append("name", productForm.name.trim());
-      fd.append("category_id", String(Number(productForm.category_id)));
-      fd.append("description", productForm.description.trim() || "");
+      await Promise.all(
+        imageItems.map(async (item) => {
+          const fd = new FormData();
+          fd.append("images", item.file);
+          fd.append("product_id", String(productId));
+          if (item.color) fd.append("color", item.color);
+          fd.append("is_thumbnail", item.is_thumbnail ? "true" : "false");
 
-      const variantsPayload = variantRows.map((r) => ({
-        color: r.color,
-        size: r.size,
-        price: Number(r.price),
-        list_price: r.list_price ? Number(r.list_price) : null,
-      }));
-      fd.append("variants", JSON.stringify(variantsPayload));
-
-      for (const item of imageItems) {
-        fd.append("images", item.file);
-        fd.append(`color_${item.file.name}`, item.color);
-        fd.append(`thumbnail_${item.file.name}`, item.is_thumbnail ? "true" : "false");
-      }
-
-      await api.post("/products/create-full", fd, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+          await api.post("/product-images/create-product-images", fd, {
+            headers: { "Content-Type": "multipart/form-data" },
+          });
+        })
+      );
 
       markStepDone(3);
       navigate("/admin/products", {
         state: { message: "Tạo sản phẩm thành công!" },
       });
     } catch (err) {
-      setError(err?.response?.data?.message || "Không thể tạo sản phẩm.");
+      setError(err?.response?.data?.message || "Không thể tải ảnh lên.");
     } finally {
-      setSubmitting(false);
+      setUploadingImages(false);
     }
   };
+
+
 
   const inputClass =
     "w-full border border-neutral-200 rounded-md px-4 py-2.5 text-sm outline-none focus:border-neutral-400 transition-colors";
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-3xl mx-auto w-full">
+    <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10 w-full">
       <header className="mb-6">
         <h1 className="text-xl sm:text-2xl font-medium tracking-tight text-neutral-900">
-          Tạo sản phẩm mới
+          {isResume ? "Tiếp tục tạo sản phẩm" : "Tạo sản phẩm mới"}
         </h1>
-        <p className="mt-1 text-sm text-neutral-500">Luồng 3 bước — Thông tin, biến thể, hình ảnh</p>
+        <p className="mt-1 text-sm text-neutral-500">
+          {isResume
+            ? `Đang tiếp tục sản phẩm #${productId} — bước ${step}/3`
+            : "Luồng 3 bước — Thông tin, biến thể, hình ảnh"}
+        </p>
       </header>
 
       <StepProgressBar currentStep={step} completedSteps={completedSteps} />
@@ -471,14 +509,14 @@ export default function CreateProduct() {
                   placeholder="Mô tả ngắn về sản phẩm..."
                 />
               </div>
-              <button
-                type="submit"
-                disabled={submitting}
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 text-sm bg-black text-white rounded-md hover:bg-neutral-800 disabled:opacity-60 transition-colors"
-              >
-                {submitting && <IconSpinner />}
-                Tiếp tục sang cấu hình biến thể
-              </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 text-sm bg-black text-white rounded-md hover:bg-neutral-800 disabled:opacity-60 transition-colors"
+                >
+                  {submitting && <IconSpinner />}
+                  Tạo sản phẩm
+                </button>
             </form>
           </section>
 
@@ -565,11 +603,11 @@ export default function CreateProduct() {
                 <button
                   type="button"
                   onClick={handleStep2Submit}
-                  disabled={submitting || !variantRows.length}
+                  disabled={savingVariants || !variantRows.length}
                   className="inline-flex items-center gap-2 px-6 py-2.5 text-sm bg-black text-white rounded-md hover:bg-neutral-800 disabled:opacity-60"
                 >
-                  {submitting && <IconSpinner />}
-                  Lưu biến thể &amp; Tiếp tục
+                  {savingVariants && <IconSpinner />}
+                  Lưu biến thể
                 </button>
               </div>
             </div>
@@ -658,7 +696,7 @@ export default function CreateProduct() {
                 <button
                   type="button"
                   onClick={() => setStep(2)}
-                  disabled={submitting}
+                  disabled={uploadingImages}
                   className="px-5 py-2.5 text-sm text-neutral-600 hover:text-neutral-900"
                 >
                   Quay lại
@@ -666,11 +704,11 @@ export default function CreateProduct() {
                 <button
                   type="button"
                   onClick={handleStep3Finish}
-                  disabled={submitting}
+                  disabled={uploadingImages}
                   className="inline-flex items-center gap-2 px-6 py-2.5 text-sm bg-black text-white rounded-md hover:bg-neutral-800 disabled:opacity-60"
                 >
-                  {submitting && <IconSpinner />}
-                  Hoàn tất tạo sản phẩm
+                  {uploadingImages && <IconSpinner />}
+                  Tải ảnh lên
                 </button>
               </div>
             </div>
