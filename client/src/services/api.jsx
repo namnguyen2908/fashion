@@ -2,7 +2,7 @@ import axios from "axios";
 
 /** Auth tokens are httpOnly cookies only — never use localStorage/sessionStorage. */
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL,
+  baseURL: '/api',
   withCredentials: true,
   headers: {
     "Content-Type": "application/json",
