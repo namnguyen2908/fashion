@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import api from "../../services/api";
 import { IconSpinner, IconSearch } from "../../components/admin/Icons";
 
@@ -15,6 +15,7 @@ export default function UserDashboard() {
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
+  const debounceRef = useRef(null);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
@@ -59,19 +60,6 @@ export default function UserDashboard() {
     Promise.all([fetchUsers(), fetchRoles()]).finally(() => setLoading(false));
   }, [fetchUsers, fetchRoles]);
 
-  const handleSearch = (e) => {
-    e.preventDefault();
-    setSearch(searchInput);
-    setPage(1);
-  };
-
-  const switchTab = (t) => {
-    setTab(t);
-    setPage(1);
-    setSearch("");
-    setSearchInput("");
-  };
-
   const handleRoleChange = async (userId, roleSlug) => {
     setChangingRole((prev) => ({ ...prev, [userId]: true }));
     setChangeError("");
@@ -114,16 +102,23 @@ export default function UserDashboard() {
                   <option key={r.slug} value={r.slug}>{r.name}</option>
                 ))}
               </select>
-              <form onSubmit={handleSearch} className="relative w-full sm:w-56">
+              <div className="relative w-full sm:w-56">
+                <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none" />
                 <input
                   type="text"
                   value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
+                  onChange={(e) => {
+                    setSearchInput(e.target.value);
+                    clearTimeout(debounceRef.current);
+                    debounceRef.current = setTimeout(() => {
+                      setSearch(e.target.value);
+                      setPage(1);
+                    }, 500);
+                  }}
                   placeholder="Tìm kiếm..."
                   className="w-full border border-neutral-200 rounded-md pl-10 pr-4 py-2.5 text-sm text-neutral-900 outline-none focus:border-neutral-400 transition-colors"
                 />
-                <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none" />
-              </form>
+              </div>
             </div>
           </div>
         </header>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import api from "../../services/api";
 import { IconSpinner, IconSearch } from "../../components/admin/Icons";
 
@@ -8,6 +8,7 @@ export default function CustomerList() {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
+  const debounceRef = useRef(null);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
@@ -35,12 +36,6 @@ export default function CustomerList() {
     fetchCustomers().finally(() => setLoading(false));
   }, [fetchCustomers]);
 
-  const handleSearch = (e) => {
-    e.preventDefault();
-    setSearch(searchInput);
-    setPage(1);
-  };
-
   const formatDate = (value) => {
     if (!value) return "—";
     return new Intl.DateTimeFormat("vi-VN", {
@@ -62,16 +57,23 @@ export default function CustomerList() {
               {total > 0 ? `${total} khách hàng` : "Danh sách khách hàng"}
             </p>
           </div>
-          <form onSubmit={handleSearch} className="relative w-full sm:w-72">
+          <div className="relative w-full sm:w-72">
+            <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none" />
             <input
               type="text"
               value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
+              onChange={(e) => {
+                setSearchInput(e.target.value);
+                clearTimeout(debounceRef.current);
+                    debounceRef.current = setTimeout(() => {
+                      setSearch(e.target.value);
+                      setPage(1);
+                    }, 500);
+              }}
               placeholder="Tìm kiếm khách hàng..."
               className="w-full border border-neutral-200 rounded-md pl-10 pr-4 py-2.5 text-sm text-neutral-900 outline-none focus:border-neutral-400 transition-colors"
             />
-            <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none" />
-          </form>
+          </div>
         </header>
 
         {error && (

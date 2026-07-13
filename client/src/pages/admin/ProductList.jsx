@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Link, useLocation } from "react-router-dom";
 import api from "../../services/api";
-import { IconSpinner, IconEye, IconTrash, IconPlay } from "../../components/admin/Icons";
+import { IconSpinner, IconEye, IconTrash, IconPlay, IconSearch } from "../../components/admin/Icons";
+import AutocompleteSelect from "../../components/admin/AutocompleteSelect";
 
 const formatDate = (value) => {
   if (!value) return "—";
@@ -52,6 +53,7 @@ export default function ProductList() {
   const [searchInput, setSearchInput] = useState("");
   const [categories, setCategories] = useState([]);
   const [categoryFilter, setCategoryFilter] = useState("");
+  const debounceRef = useRef(null);
 
   const fetchProducts = useCallback(async () => {
     setLoading(true);
@@ -77,12 +79,6 @@ export default function ProductList() {
     fetchProducts();
     api.get("/categories").then(({ data }) => setCategories(Array.isArray(data) ? data : [])).catch(() => {});
   }, [fetchProducts]);
-
-  const handleSearch = (e) => {
-    e.preventDefault();
-    setPage(1);
-    setSearch(searchInput);
-  };
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
@@ -122,44 +118,29 @@ export default function ProductList() {
       </div>
 
       <div className="mb-6 flex flex-col sm:flex-row gap-2">
-        <select
+        <AutocompleteSelect
+          options={categories.map((c) => ({ value: c.id, label: c.name }))}
           value={categoryFilter}
-          onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }}
-          className="w-full sm:w-auto border border-neutral-200 rounded-md px-4 py-2 text-sm text-neutral-900 bg-white outline-none focus:border-neutral-400 transition-colors"
-        >
-          <option value="">Tất cả danh mục</option>
-          {categories.map((cat) => (
-            <option key={cat.id} value={cat.id}>{cat.name}</option>
-          ))}
-        </select>
-      <form onSubmit={handleSearch} className="flex gap-2 flex-1">
-        <input
-          type="search"
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          placeholder="Tìm theo tên sản phẩm..."
-          className="flex-1 border border-neutral-200 rounded-md px-4 py-2 text-sm outline-none focus:border-neutral-400"
+          onChange={(v) => { setCategoryFilter(v); setPage(1); }}
+          placeholder="Tất cả danh mục..."
         />
-        <button
-          type="submit"
-          className="px-4 py-2 text-sm border border-neutral-200 rounded-md hover:bg-neutral-50 transition-colors"
-        >
-          Tìm
-        </button>
-        {search && (
-          <button
-            type="button"
-            onClick={() => {
-              setSearchInput("");
-              setSearch("");
-              setPage(1);
+        <div className="relative flex-1">
+          <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none z-10" />
+          <input
+            type="text"
+            value={searchInput}
+            onChange={(e) => {
+              setSearchInput(e.target.value);
+              clearTimeout(debounceRef.current);
+                    debounceRef.current = setTimeout(() => {
+                      setSearch(e.target.value);
+                      setPage(1);
+                    }, 500);
             }}
-            className="px-4 py-2 text-sm text-neutral-500 hover:text-neutral-900"
-          >
-            Xóa
-          </button>
-        )}
-      </form>
+            placeholder="Tìm theo tên sản phẩm..."
+            className="w-full border border-neutral-200 rounded-md pl-10 pr-4 py-2 text-sm text-neutral-900 outline-none focus:border-neutral-400 transition-colors"
+          />
+        </div>
       </div>
 
       {error && (
