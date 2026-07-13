@@ -1,22 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import api from "../../services/api";
-
-function IconSpinner({ className = "w-4 h-4" }) {
-  return (
-    <svg className={`animate-spin ${className}`} viewBox="0 0 24 24" fill="none">
-      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-    </svg>
-  );
-}
-
-function IconSearch({ className = "w-4 h-4" }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
-    </svg>
-  );
-}
+import { IconSpinner, IconSearch } from "../../components/admin/Icons";
 
 export default function CustomerList() {
   const [users, setUsers] = useState([]);
@@ -24,6 +8,7 @@ export default function CustomerList() {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
+  const debounceRef = useRef(null);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
@@ -51,12 +36,6 @@ export default function CustomerList() {
     fetchCustomers().finally(() => setLoading(false));
   }, [fetchCustomers]);
 
-  const handleSearch = (e) => {
-    e.preventDefault();
-    setSearch(searchInput);
-    setPage(1);
-  };
-
   const formatDate = (value) => {
     if (!value) return "—";
     return new Intl.DateTimeFormat("vi-VN", {
@@ -78,16 +57,23 @@ export default function CustomerList() {
               {total > 0 ? `${total} khách hàng` : "Danh sách khách hàng"}
             </p>
           </div>
-          <form onSubmit={handleSearch} className="relative w-full sm:w-72">
+          <div className="relative w-full sm:w-72">
+            <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none" />
             <input
               type="text"
               value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
+              onChange={(e) => {
+                setSearchInput(e.target.value);
+                clearTimeout(debounceRef.current);
+                    debounceRef.current = setTimeout(() => {
+                      setSearch(e.target.value);
+                      setPage(1);
+                    }, 500);
+              }}
               placeholder="Tìm kiếm khách hàng..."
               className="w-full border border-neutral-200 rounded-md pl-10 pr-4 py-2.5 text-sm text-neutral-900 outline-none focus:border-neutral-400 transition-colors"
             />
-            <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none" />
-          </form>
+          </div>
         </header>
 
         {error && (

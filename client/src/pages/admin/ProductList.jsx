@@ -1,32 +1,8 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Link, useLocation } from "react-router-dom";
 import api from "../../services/api";
-import IconSpinner from "../../components/admin/IconSpinner";
-
-function IconEye({ className = "w-4 h-4" }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
-      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
-    </svg>
-  );
-}
-
-function IconTrash({ className = "w-4 h-4" }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
-    </svg>
-  );
-}
-
-function IconPlay({ className = "w-4 h-4" }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z" />
-    </svg>
-  );
-}
+import { IconSpinner, IconEye, IconTrash, IconPlay, IconSearch } from "../../components/admin/Icons";
+import AutocompleteSelect from "../../components/admin/AutocompleteSelect";
 
 const formatDate = (value) => {
   if (!value) return "—";
@@ -75,18 +51,19 @@ export default function ProductList() {
   const [total, setTotal] = useState(0);
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
+  const [categories, setCategories] = useState([]);
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const debounceRef = useRef(null);
 
   const fetchProducts = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const { data } = await api.get("/products", {
-        params: {
-          page,
-          limit: 15,
-          search: search.trim(),
-        },
-      });
+      const params = { page, limit: 15 };
+      if (search.trim()) params.search = search.trim();
+      if (categoryFilter) params.category = categoryFilter;
+
+      const { data } = await api.get("/products", { params });
       setProducts(data?.data ?? []);
       setTotalPages(data?.totalPages ?? 1);
       setTotal(data?.total ?? 0);
@@ -96,17 +73,12 @@ export default function ProductList() {
     } finally {
       setLoading(false);
     }
-  }, [page, search]);
+  }, [page, search, categoryFilter]);
 
   useEffect(() => {
     fetchProducts();
+    api.get("/categories").then(({ data }) => setCategories(Array.isArray(data) ? data : [])).catch(() => {});
   }, [fetchProducts]);
-
-  const handleSearch = (e) => {
-    e.preventDefault();
-    setPage(1);
-    setSearch(searchInput);
-  };
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
@@ -145,34 +117,31 @@ export default function ProductList() {
         </Link>
       </div>
 
-      <form onSubmit={handleSearch} className="mb-6 flex gap-2">
-        <input
-          type="search"
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          placeholder="Tìm theo tên sản phẩm..."
-          className="flex-1 border border-neutral-200 rounded-md px-4 py-2 text-sm outline-none focus:border-neutral-400"
+      <div className="mb-6 flex flex-col sm:flex-row gap-2">
+        <AutocompleteSelect
+          options={categories.map((c) => ({ value: c.id, label: c.name }))}
+          value={categoryFilter}
+          onChange={(v) => { setCategoryFilter(v); setPage(1); }}
+          placeholder="Tất cả danh mục..."
         />
-        <button
-          type="submit"
-          className="px-4 py-2 text-sm border border-neutral-200 rounded-md hover:bg-neutral-50 transition-colors"
-        >
-          Tìm
-        </button>
-        {search && (
-          <button
-            type="button"
-            onClick={() => {
-              setSearchInput("");
-              setSearch("");
-              setPage(1);
+        <div className="relative flex-1">
+          <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none z-10" />
+          <input
+            type="text"
+            value={searchInput}
+            onChange={(e) => {
+              setSearchInput(e.target.value);
+              clearTimeout(debounceRef.current);
+                    debounceRef.current = setTimeout(() => {
+                      setSearch(e.target.value);
+                      setPage(1);
+                    }, 500);
             }}
-            className="px-4 py-2 text-sm text-neutral-500 hover:text-neutral-900"
-          >
-            Xóa
-          </button>
-        )}
-      </form>
+            placeholder="Tìm theo tên sản phẩm..."
+            className="w-full border border-neutral-200 rounded-md pl-10 pr-4 py-2 text-sm text-neutral-900 outline-none focus:border-neutral-400 transition-colors"
+          />
+        </div>
+      </div>
 
       {error && (
         <p className="mb-6 text-sm text-red-600 bg-red-50 border border-red-100 rounded-md px-4 py-3">

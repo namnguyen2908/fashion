@@ -11,7 +11,7 @@ router.post('/logout', logout);
 router.post('/refresh', refresh);
 router.get('/me', verifyToken, getMe);
 router.get('/customers', verifyToken, verifyPermission('user:view'), getCustomers);
-router.get('/users', verifyToken, verifyPermission('user:view'), getUsers);
+router.get('/users', verifyToken, verifyPermission('user:manage'), getUsers);
 
 router.post('/forgot-password', forgotPassword);
 router.post('/verify-otp', verifyOTP);

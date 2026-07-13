@@ -57,6 +57,7 @@ INSERT INTO permissions (name, slug, description, "group") VALUES
     ('Xóa danh mục', 'category:delete', 'Xóa danh mục', 'category'),
 
     ('Xem người dùng', 'user:view', 'Xem danh sách người dùng', 'user'),
+    ('Quản lý người dùng', 'user:manage', 'Thay đổi vai trò và quản lý người dùng', 'user'),
 
     ('Xem vai trò', 'role:view', 'Xem danh sách và chi tiết vai trò', 'role'),
     ('Thêm vai trò', 'role:create', 'Tạo vai trò mới', 'role'),
