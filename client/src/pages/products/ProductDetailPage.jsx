@@ -106,7 +106,8 @@ export default function ProductDetailPage() {
                       images: imgs,
                       colors: getUniqueColorsFromVariants(vars),
                       price: dv?.price ?? 0,
-                      compare_price: dv?.compare_price ?? null,
+                      list_price: dv?.list_price ?? null,
+                      old_price: dv?.old_price ?? null,
                       defaultImage: imgs.find((i) => i.is_thumbnail)?.image_url || imgs[0]?.image_url || null,
                     };
                   } catch {
@@ -304,13 +305,23 @@ export default function ProductDetailPage() {
                 <span className="text-xl sm:text-2xl font-medium">
                   {formatVND(selectedVariant.price)}
                 </span>
-                {selectedVariant.compare_price > selectedVariant.price && (
+                {selectedVariant.old_price != null && Number(selectedVariant.old_price) > Number(selectedVariant.price) && (
                   <>
                     <span className="text-sm text-neutral-400 line-through">
-                      {formatVND(selectedVariant.compare_price)}
+                      {formatVND(selectedVariant.old_price)}
                     </span>
                     <span className="text-xs text-red-500 font-medium">
-                      {calcDiscountLabel(selectedVariant.compare_price, selectedVariant.price)}
+                      {calcDiscountLabel(selectedVariant.list_price, selectedVariant.price, selectedVariant.old_price)}
+                    </span>
+                  </>
+                )}
+                {selectedVariant.old_price == null && selectedVariant.list_price != null && Number(selectedVariant.list_price) > Number(selectedVariant.price) && (
+                  <>
+                    <span className="text-sm text-neutral-400 line-through">
+                      {formatVND(selectedVariant.list_price)}
+                    </span>
+                    <span className="text-xs text-red-500 font-medium">
+                      {calcDiscountLabel(selectedVariant.list_price, selectedVariant.price)}
                     </span>
                   </>
                 )}
@@ -538,9 +549,13 @@ export default function ProductDetailPage() {
                   </p>
                   <div className="flex items-baseline gap-2">
                     <span className="text-sm font-medium">{formatVND(rp.price)}</span>
-                    {rp.compare_price > rp.price && (
+                    {rp.old_price && Number(rp.old_price) > Number(rp.price) ? (
                       <span className="text-xs text-neutral-400 line-through">
-                        {formatVND(rp.compare_price)}
+                        {formatVND(rp.old_price)}
+                      </span>
+                    ) : rp.list_price && (
+                      <span className="text-xs text-neutral-400 line-through">
+                        {formatVND(rp.list_price)}
                       </span>
                     )}
                   </div>

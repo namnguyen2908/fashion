@@ -10,6 +10,8 @@ const migrations = [
     '001_inventory_and_color_images.sql',
     '002_add_payment_fields_to_orders.sql',
     '003_add_bank_info_to_orders.sql',
+    '004_rename_compare_price_add_old_price.sql',
+    '005_backfill_old_price.sql',
 ];
 
 try {
