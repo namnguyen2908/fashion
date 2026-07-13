@@ -72,7 +72,7 @@ export default function ProductDetail() {
 
   const [variantEdits, setVariantEdits] = useState({});
   const [savingVariantId, setSavingVariantId] = useState(null);
-  const [newVariant, setNewVariant] = useState({ color: "", size: "", price: "", compare_price: "" });
+  const [newVariant, setNewVariant] = useState({ color: "", size: "", price: "", list_price: "" });
   const [addingVariant, setAddingVariant] = useState(false);
 
   const [uploadingImages, setUploadingImages] = useState(false);
@@ -125,7 +125,7 @@ export default function ProductDetail() {
           color: normalizeColorName(v.color ?? ""),
           size: v.size ?? "",
           price: String(v.price ?? ""),
-          compare_price: v.compare_price != null ? String(v.compare_price) : "",
+          list_price: v.list_price != null ? String(v.list_price) : "",
         };
       });
       setVariantEdits(edits);
@@ -200,7 +200,7 @@ export default function ProductDetail() {
         color: row.color,
         size: row.size,
         price: Number(row.price),
-        compare_price: row.compare_price ? Number(row.compare_price) : null,
+        list_price: row.list_price ? Number(row.list_price) : null,
       });
       setMessage("Đã cập nhật biến thể.");
       await loadAll();
@@ -229,9 +229,9 @@ export default function ProductDetail() {
         color: newVariant.color,
         size: newVariant.size,
         price: Number(newVariant.price),
-        compare_price: newVariant.compare_price ? Number(newVariant.compare_price) : null,
+        list_price: newVariant.list_price ? Number(newVariant.list_price) : null,
       });
-      setNewVariant({ color: "", size: "", price: "", compare_price: "" });
+      setNewVariant({ color: "", size: "", price: "", list_price: "" });
       setMessage("Đã thêm biến thể mới.");
       await loadAll();
     } catch (err) {
@@ -468,7 +468,7 @@ export default function ProductDetail() {
                         <input type="number" min="1" value={variantEdits[v.id]?.price ?? ""} onChange={(e) => updateVariantEdit(v.id, "price", e.target.value)} className="w-28 border border-neutral-200 rounded px-2 py-1 text-sm" />
                       </td>
                       <td className="px-3 py-2">
-                        <input type="number" min="0" value={variantEdits[v.id]?.compare_price ?? ""} onChange={(e) => updateVariantEdit(v.id, "compare_price", e.target.value)} className="w-28 border border-neutral-200 rounded px-2 py-1 text-sm" />
+                        <input type="number" min="0" value={variantEdits[v.id]?.list_price ?? ""} onChange={(e) => updateVariantEdit(v.id, "list_price", e.target.value)} className="w-28 border border-neutral-200 rounded px-2 py-1 text-sm" />
                       </td>
                       <td className="px-3 py-2">
                         <div className="flex gap-1">
@@ -509,7 +509,7 @@ export default function ProductDetail() {
               />
               <input placeholder="Size" value={newVariant.size} onChange={(e) => setNewVariant((v) => ({ ...v, size: e.target.value }))} className={inputClass} />
               <input type="number" placeholder="Giá bán *" required value={newVariant.price} onChange={(e) => setNewVariant((v) => ({ ...v, price: e.target.value }))} className={inputClass} />
-              <input type="number" placeholder="Giá gốc" value={newVariant.compare_price} onChange={(e) => setNewVariant((v) => ({ ...v, compare_price: e.target.value }))} className={inputClass} />
+              <input type="number" placeholder="Giá gốc" value={newVariant.list_price} onChange={(e) => setNewVariant((v) => ({ ...v, list_price: e.target.value }))} className={inputClass} />
             </div>
             <button type="submit" disabled={addingVariant} className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 text-sm border border-neutral-300 rounded-md hover:bg-neutral-50 disabled:opacity-60">
               {addingVariant && <IconSpinner />}

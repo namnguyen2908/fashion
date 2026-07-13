@@ -24,7 +24,7 @@ function cartesianVariants(colors, sizes) {
       color,
       size,
       price: "",
-      compare_price: "",
+      list_price: "",
     }))
   );
 }
@@ -341,7 +341,7 @@ export default function CreateProduct() {
         color: r.color,
         size: r.size,
         price: Number(r.price),
-        compare_price: r.compare_price ? Number(r.compare_price) : null,
+        list_price: r.list_price ? Number(r.list_price) : null,
       }));
       fd.append("variants", JSON.stringify(variantsPayload));
 
@@ -538,8 +538,8 @@ export default function CreateProduct() {
                             <input
                               type="number"
                               min="0"
-                              value={row.compare_price}
-                              onChange={(e) => updateVariantRow(row.key, "compare_price", e.target.value)}
+                              value={row.list_price}
+                              onChange={(e) => updateVariantRow(row.key, "list_price", e.target.value)}
                               className="w-28 border border-neutral-200 rounded px-2 py-1.5 text-sm"
                               placeholder="—"
                             />

@@ -306,8 +306,8 @@ export const createFullProduct = async (req, res) => {
             const sku = `SKU-${productId}-${cleanColor}-${cleanSize}-${random}`;
 
             const result = await dbClient.query(
-                `INSERT INTO product_variants(product_id, color, size, sku, price, compare_price) VALUES($1, $2, $3, $4, $5, $6) RETURNING id, product_id, color, size, sku, price, compare_price`,
-                [productId, v.color || '', v.size || '', sku, Number(v.price), v.compare_price ? Number(v.compare_price) : null]
+                `INSERT INTO product_variants(product_id, color, size, sku, price, list_price, old_price) VALUES($1, $2, $3, $4, $5, $6, $5) RETURNING id, product_id, color, size, sku, price, list_price, old_price`,
+                [productId, v.color || '', v.size || '', sku, Number(v.price), v.list_price ? Number(v.list_price) : null]
             );
             createdVariants.push(result.rows[0]);
         }
@@ -389,86 +389,6 @@ export const createFullProduct = async (req, res) => {
         dbClient.release();
     }
 };
-
-// =========================================
-// CREATE PRODUCT
-// =========================================
-export const createProduct = async (req, res) => {
-    try {
-        const {
-            name,
-            category_id,
-            description
-        } = req.body;
-
-        if (!name || !category_id) {
-            return res.status(400).json({
-                success: false,
-                message: 'Name and category are required'
-            });
-        }
-
-        const category = await pool.query(
-            `SELECT id FROM categories WHERE id = $1`,
-            [category_id]
-        );
-
-        if (category.rows.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: 'Category not found'
-            });
-        }
-
-        const childCategory = await pool.query(
-            `SELECT id FROM categories WHERE parent_id = $1 LIMIT 1`,
-            [category_id]
-        );
-
-        if (childCategory.rows.length > 0) {
-            return res.status(400).json({
-                success: false,
-                message: 'Cannot assign product to parent category'
-            });
-        }
-
-        let slug = generateSlug(name);
-
-        const existing = await pool.query(
-            `SELECT id FROM products WHERE slug LIKE $1`,
-            [`${slug}%`]
-        );
-
-        if (existing.rows.length > 0) {
-            slug = `${slug}-${existing.rows.length + 1}`;
-        }
-
-        const result = await pool.query(
-            `
-            INSERT INTO products (category_id, name, slug, description)
-            VALUES ($1, $2, $3, $4)
-            RETURNING *
-            `,
-            [category_id, name, slug, description || null]
-        );
-
-        await incrCache('products:version');
-
-        return res.status(201).json({
-            success: true,
-            message: 'Product created successfully',
-            data: result.rows[0]
-        });
-
-    } catch (error) {
-        console.log(error);
-        return res.status(500).json({
-            success: false,
-            message: 'Server error'
-        });
-    }
-};
-
 
 // =========================================
 // UPDATE PRODUCT
