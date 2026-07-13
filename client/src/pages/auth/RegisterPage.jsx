@@ -185,7 +185,7 @@ export default function RegisterPage() {
       });
 
       setTimeout(() => {
-        navigate(isAdminRole(user?.role) ? "/admin/categories" : "/", { replace: true });
+        navigate(isAdminRole(user?.role) ? "/admin/products" : "/", { replace: true });
       }, 800);
     } catch (err) {
       console.error("❌ Đăng ký thất bại:", err);

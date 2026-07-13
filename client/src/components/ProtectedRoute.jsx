@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { isAdminRole } from "../constants/roles";
 
-export default function ProtectedRoute({ children, allowedRoles }) {
+export default function ProtectedRoute({ children }) {
   const { user, loading, restoreSession } = useAuth();
   const location = useLocation();
   const [sessionChecked, setSessionChecked] = useState(false);
@@ -36,7 +37,7 @@ export default function ProtectedRoute({ children, allowedRoles }) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  if (allowedRoles?.length && !allowedRoles.includes(user.role)) {
+  if (!isAdminRole(user.role)) {
     return <Navigate to="/" replace />;
   }
 

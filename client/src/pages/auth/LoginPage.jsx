@@ -158,7 +158,7 @@ export default function LoginPage() {
       if (from && (!from.startsWith("/admin") || isAdminRole(user?.role))) {
         navigate(from, { replace: true });
       } else if (isAdminRole(user?.role)) {
-        navigate("/admin/categories", { replace: true });
+        navigate("/admin/products", { replace: true });
       } else {
         navigate("/", { replace: true });
       }
