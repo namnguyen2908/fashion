@@ -1,17 +1,15 @@
 import express from "express";
-import multer from "multer";
 import { verifyToken } from "../middlewares/auth.middleware.js";
-import { getProducts, getProductById, getProductBySlug, createFullProduct, updateProduct, deleteProduct } from "../controllers/product.controller.js";
-import { verifyRole } from '../middlewares/verifyRole.middleware.js';
+import { getProducts, getProductById, getProductBySlug, createProduct, updateProduct, deleteProduct } from "../controllers/product.controller.js";
+import { verifyPermission } from '../middlewares/permission.middleware.js';
 
 const router = express.Router();
-const upload = multer({ storage: multer.memoryStorage() });
 
 router.get("/", getProducts);
 router.get("/slug/:slug", getProductBySlug);
 router.get("/:id", getProductById);
-router.post("/create-full", verifyToken, verifyRole('admin', 'staff'), upload.array('images', 20), createFullProduct);
-router.put("/update-product/:id", verifyRole('admin', 'staff'), verifyToken, updateProduct);
-router.delete("/delete-product/:id", verifyRole('admin', 'staff'), verifyToken, deleteProduct);
+router.post("/create-product", verifyToken, verifyPermission('product:create'), createProduct);
+router.put("/update-product/:id", verifyToken, verifyPermission('product:update'), updateProduct);
+router.delete("/delete-product/:id", verifyToken, verifyPermission('product:delete'), deleteProduct);
 
 export default router;

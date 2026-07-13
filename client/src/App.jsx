@@ -3,7 +3,6 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import { CartProvider } from './context/CartContext'
 import ProtectedRoute from './components/ProtectedRoute'
-import { ADMIN_ROLES } from './constants/roles'
 import PublicLayout from './layouts/PublicLayout';
 import HomePage from './pages/HomePage';
 import ProductDetailPage from './pages/products/ProductDetailPage';
@@ -21,6 +20,9 @@ import CategoryDashboard from './pages/admin/CategoryDashboard';
 import CreateProduct from './pages/admin/CreateProduct';
 import ProductList from './pages/admin/ProductList';
 import ProductDetail from './pages/admin/ProductDetail';
+import RoleDashboard from './pages/admin/RoleDashboard';
+import UserDashboard from './pages/admin/UserDashboard';
+import CustomerList from './pages/admin/CustomerList';
 
 function App() {
   return (
@@ -41,7 +43,7 @@ function App() {
           <Route
             path="/admin"
             element={
-              <ProtectedRoute allowedRoles={ADMIN_ROLES}>
+              <ProtectedRoute>
                 <AdminLayout />
               </ProtectedRoute>
             }
@@ -51,6 +53,9 @@ function App() {
             <Route path="products" element={<ProductList />} />
             <Route path="products/create" element={<CreateProduct />} />
             <Route path="products/:id" element={<ProductDetail />} />
+            <Route path="roles" element={<RoleDashboard />} />
+            <Route path="users" element={<UserDashboard />} />
+            <Route path="customers" element={<CustomerList />} />
           </Route>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />

@@ -9,6 +9,14 @@ export default defineConfig(({ mode }) => {
     plugins: [react(), tailwindcss()],
     server: {
       port: Number(env.VITE_PORT),
+      proxy: {
+        '/api': {
+          target: env.VITE_API_URL?.replace('/api', '') || 'http://localhost:8000',
+          changeOrigin: true,
+          timeout: 120000,
+          proxyTimeout: 120000,
+        },
+      },
     },
   };
 });

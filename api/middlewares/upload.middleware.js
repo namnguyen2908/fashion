@@ -11,20 +11,12 @@ const storage = new CloudinaryStorage({
 
         return {
             folder,
-
+            format: 'webp',
             resource_type: 'image',
-
             allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
-
             transformation: [
-                {
-                    width: 1200,
-                    crop: 'limit',
-                    quality: 'auto',
-                    fetch_format: 'auto'
-                }
+                { width: 1600, crop: 'limit', quality: 'auto:best' }
             ],
-
             public_id: buildFileName(file.originalname),
         };
     }
@@ -95,7 +87,7 @@ const upload = multer({
     storage,
 
     limits: {
-        fileSize: 5 * 1024 * 1024 // 5MB
+        fileSize: 50 * 1024 * 1024
     },
 
     fileFilter

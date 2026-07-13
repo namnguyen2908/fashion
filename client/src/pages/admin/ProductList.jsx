@@ -3,6 +3,31 @@ import { Link, useLocation } from "react-router-dom";
 import api from "../../services/api";
 import IconSpinner from "../../components/admin/IconSpinner";
 
+function IconEye({ className = "w-4 h-4" }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+    </svg>
+  );
+}
+
+function IconTrash({ className = "w-4 h-4" }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+    </svg>
+  );
+}
+
+function IconPlay({ className = "w-4 h-4" }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z" />
+    </svg>
+  );
+}
+
 const formatDate = (value) => {
   if (!value) return "—";
   return new Intl.DateTimeFormat("vi-VN", {
@@ -11,6 +36,29 @@ const formatDate = (value) => {
     year: "numeric",
   }).format(new Date(value));
 };
+
+const STATUS_LABELS = {
+  incomplete: { icon: "!", class: "text-amber-600 bg-amber-50 border-amber-200", label: "Chưa hoàn thành" },
+  missing_variants: { icon: "!", class: "text-amber-600 bg-amber-50 border-amber-200", label: "Thiếu biến thể" },
+  missing_images: { icon: "!", class: "text-amber-600 bg-amber-50 border-amber-200", label: "Thiếu hình ảnh" },
+  ok: { icon: "✓", class: "text-green-600 bg-green-50 border-green-200", label: "Hoàn chỉnh" },
+};
+
+function getProductStatus(product) {
+  const vc = Number(product.variant_count) || 0;
+  const ic = Number(product.image_count) || 0;
+  if (vc === 0 && ic === 0) return "incomplete";
+  if (vc === 0) return "missing_variants";
+  if (ic === 0) return "missing_images";
+  return "ok";
+}
+
+function getContinueUrl(product) {
+  const vc = Number(product.variant_count) || 0;
+  const ic = Number(product.image_count) || 0;
+  const step = ic === 0 ? 3 : vc === 0 ? 2 : 1;
+  return `/admin/products/create?productId=${product.id}&step=${step}`;
+}
 
 export default function ProductList() {
   const location = useLocation();
@@ -75,7 +123,7 @@ export default function ProductList() {
   };
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-5xl w-full">
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10 w-full">
       {successMessage && (
         <p className="mb-6 text-sm text-green-800 bg-green-50 border border-green-100 rounded-md px-4 py-3">
           {successMessage}
@@ -154,61 +202,91 @@ export default function ProductList() {
           <div className="bg-white border border-neutral-200 rounded-lg overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-neutral-50 text-left text-xs uppercase tracking-wider text-neutral-500">
-                    <th className="px-4 py-3 font-medium">Tên sản phẩm</th>
-                    <th className="px-4 py-3 font-medium hidden sm:table-cell">Danh mục</th>
-                    <th className="px-4 py-3 font-medium hidden md:table-cell">Slug</th>
-                    <th className="px-4 py-3 font-medium hidden lg:table-cell">Ngày tạo</th>
-                    <th className="px-4 py-3 font-medium text-right">Thao tác</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {products.map((product) => (
-                    <tr
-                      key={product.id}
-                      className="border-t border-neutral-100 hover:bg-neutral-50/80 transition-colors"
-                    >
-                      <td className="px-4 py-3">
-                        <Link
-                          to={`/admin/products/${product.id}`}
-                          className="font-medium text-neutral-900 hover:underline underline-offset-2"
-                        >
-                          {product.name}
-                        </Link>
-                        <p className="sm:hidden text-xs text-neutral-500 mt-0.5">
-                          {product.category_name || "—"}
-                        </p>
-                      </td>
-                      <td className="px-4 py-3 text-neutral-600 hidden sm:table-cell">
-                        {product.category_name || "—"}
-                      </td>
-                      <td className="px-4 py-3 text-neutral-400 text-xs hidden md:table-cell">
-                        {product.slug}
-                      </td>
-                      <td className="px-4 py-3 text-neutral-500 text-xs hidden lg:table-cell whitespace-nowrap">
-                        {formatDate(product.created_at)}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center justify-end gap-2">
-                          <Link
-                            to={`/admin/products/${product.id}`}
-                            className="text-xs px-3 py-1.5 border border-neutral-200 rounded-md hover:bg-neutral-100 transition-colors"
-                          >
-                            Chi tiết
-                          </Link>
-                          <button
-                            type="button"
-                            onClick={() => setDeleteTarget(product)}
-                            className="text-xs px-3 py-1.5 text-red-600 border border-red-100 rounded-md hover:bg-red-50 transition-colors"
-                          >
-                            Xóa
-                          </button>
-                        </div>
-                      </td>
+                  <thead>
+                    <tr className="bg-neutral-50 text-left text-xs uppercase tracking-wider text-neutral-500">
+                      <th className="px-4 py-3 font-medium">Tên sản phẩm</th>
+                      <th className="px-4 py-3 font-medium hidden sm:table-cell">Danh mục</th>
+                      <th className="px-4 py-3 font-medium hidden md:table-cell">Trạng thái</th>
+                      <th className="px-4 py-3 font-medium hidden lg:table-cell">Ngày tạo</th>
+                      <th className="px-4 py-3 font-medium text-right">Thao tác</th>
                     </tr>
-                  ))}
-                </tbody>
+                  </thead>
+                  <tbody>
+                    {products.map((product) => {
+                      const status = getProductStatus(product);
+                      const st = STATUS_LABELS[status];
+                      const isIncomplete = status !== "ok";
+
+                      return (
+                        <tr
+                          key={product.id}
+                          className={`border-t border-neutral-100 hover:bg-neutral-50/80 transition-colors ${isIncomplete ? "bg-amber-50/30" : ""}`}
+                        >
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              {isIncomplete && (
+                                <span
+                                  className={`inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold ${st.class}`}
+                                  title={st.label}
+                                >
+                                  {st.icon}
+                                </span>
+                              )}
+                              <Link
+                                to={`/admin/products/${product.id}`}
+                                className="font-medium text-neutral-900 hover:underline underline-offset-2"
+                              >
+                                {product.name}
+                              </Link>
+                            </div>
+                            <p className="sm:hidden text-xs text-neutral-500 mt-0.5">
+                              {product.category_name || "—"}
+                            </p>
+                          </td>
+                          <td className="px-4 py-3 text-neutral-600 hidden sm:table-cell">
+                            {product.category_name || "—"}
+                          </td>
+                          <td className="px-4 py-3 hidden md:table-cell">
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${st.class}`}>
+                              {st.icon}
+                              <span>{st.label}</span>
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-neutral-500 text-xs hidden lg:table-cell whitespace-nowrap">
+                            {formatDate(product.created_at)}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center justify-end gap-2">
+                              {isIncomplete && (
+                                <Link
+                                  to={getContinueUrl(product)}
+                                  className="p-1.5 text-amber-600 hover:text-amber-800 rounded-md hover:bg-amber-50 transition-colors"
+                                  aria-label="Tiếp tục"
+                                >
+                                  <IconPlay />
+                                </Link>
+                              )}
+                              <Link
+                                to={`/admin/products/${product.id}`}
+                                className="p-1.5 text-neutral-400 hover:text-neutral-900 rounded-md hover:bg-neutral-100 transition-colors"
+                                aria-label="Chi tiết"
+                              >
+                                <IconEye />
+                              </Link>
+                              <button
+                                type="button"
+                                onClick={() => setDeleteTarget(product)}
+                                className="p-1.5 text-neutral-400 hover:text-red-600 rounded-md hover:bg-red-50 transition-colors"
+                                aria-label="Xóa"
+                              >
+                                <IconTrash />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
               </table>
             </div>
           </div>
