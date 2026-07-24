@@ -11,7 +11,8 @@ export const createOrder = async (req, res) => {
       shipping_phone,
       shipping_address,
       payment_method,
-      items
+      items,
+      discount_code
     } = req.body;
 
     // Validate required fields
@@ -71,6 +72,37 @@ export const createOrder = async (req, res) => {
       });
     }
 
+    // Apply discount if provided
+    let discountAmount = 0;
+    let appliedDiscountId = null;
+
+    if (discount_code) {
+      const discountResult = await pool.query(
+        `SELECT ud.id, ud.discount_type, ud.discount_value, ud.min_order_amount
+         FROM user_discounts ud
+         WHERE ud.code = $1 AND ud.user_id = $2 AND ud.is_used = false`,
+        [discount_code.toUpperCase(), userId]
+      );
+
+      if (discountResult.rows.length > 0) {
+        const d = discountResult.rows[0];
+
+        if (!d.expires_at || new Date(d.expires_at) > new Date()) {
+          if (totalAmount >= Number(d.min_order_amount)) {
+            if (d.discount_type === 'percentage') {
+              discountAmount = Math.round(totalAmount * Number(d.discount_value) / 100);
+            } else {
+              discountAmount = Number(d.discount_value);
+            }
+            if (discountAmount > totalAmount) discountAmount = totalAmount;
+            appliedDiscountId = d.id;
+          }
+        }
+      }
+    }
+
+    totalAmount -= discountAmount;
+
     // Create order transaction
     const client = await pool.connect();
 
@@ -80,10 +112,10 @@ export const createOrder = async (req, res) => {
       // Insert order
       const orderResult = await client.query(
         `INSERT INTO orders
-         (user_id, total_amount, payment_method, shipping_full_name, shipping_phone, shipping_address, status)
-         VALUES ($1, $2, $3, $4, $5, $6, 'PENDING')
+         (user_id, total_amount, payment_method, shipping_full_name, shipping_phone, shipping_address, status, discount_amount)
+         VALUES ($1, $2, $3, $4, $5, $6, 'PENDING', $7)
          RETURNING *`,
-        [userId, totalAmount, payment_method || 'BANK_TRANSFER', shipping_full_name, shipping_phone, shipping_address]
+        [userId, totalAmount, payment_method || 'BANK_TRANSFER', shipping_full_name, shipping_phone, shipping_address, discountAmount]
       );
 
       const order = orderResult.rows[0];
@@ -97,6 +129,14 @@ export const createOrder = async (req, res) => {
         );
       }
 
+      // Mark discount as used
+      if (appliedDiscountId) {
+        await client.query(
+          `UPDATE user_discounts SET is_used = true, used_at = NOW(), order_id = $1 WHERE id = $2`,
+          [order.id, appliedDiscountId]
+        );
+      }
+
       await client.query('COMMIT');
 
       return res.status(201).json({
@@ -105,6 +145,7 @@ export const createOrder = async (req, res) => {
         data: {
           id: order.id,
           total_amount: totalAmount,
+          discount_amount: discountAmount,
           status: order.status,
           payment_status: order.payment_status,
           created_at: order.created_at
@@ -138,7 +179,7 @@ export const getMyOrders = async (req, res) => {
     const offset = (Number(page) - 1) * Number(limit);
 
     const result = await pool.query(
-      `SELECT id, total_amount, status, payment_status, payment_code,
+      `      SELECT id, total_amount, discount_amount, status, payment_status, payment_code,
               shipping_full_name, shipping_phone, shipping_address,
               created_at, paid_at
        FROM orders
@@ -179,7 +220,7 @@ export const getOrderDetail = async (req, res) => {
     const { orderId } = req.params;
 
     const orderResult = await pool.query(
-      `SELECT id, user_id, total_amount, status, payment_status, payment_code,
+      `      SELECT id, user_id, total_amount, discount_amount, status, payment_status, payment_code,
               payment_content, paid_at, transaction_id,
               shipping_full_name, shipping_phone, shipping_address,
               created_at, bank_id, bank_name, account_number

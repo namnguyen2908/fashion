@@ -13,6 +13,7 @@ const migrations = [
     '004_rename_compare_price_add_old_price.sql',
     '005_backfill_old_price.sql',
     '006_create_roles_and_permissions.sql',
+    '007_create_discount_tables.sql',
 ];
 
 try {

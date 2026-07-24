@@ -208,6 +208,12 @@ export default function OrderDetailPage() {
                 <span>Tạm tính</span>
                 <span>{formatPrice(subtotal)}</span>
               </div>
+              {Number(order.discount_amount) > 0 && (
+                <div className="flex justify-between text-green-600">
+                  <span>Giảm giá</span>
+                  <span>-{formatPrice(Number(order.discount_amount))}</span>
+                </div>
+              )}
               <div className="flex justify-between text-xl font-bold text-gray-900">
                 <span>Tổng cộng</span>
                 <span>{formatPrice(Number(order.total_amount))}</span>

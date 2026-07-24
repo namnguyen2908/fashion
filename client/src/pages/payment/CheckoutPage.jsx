@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useCart } from '../../context/CartContext';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../services/api';
+import { paymentService } from '../../services/payment';
 
 export default function CheckoutPage() {
   const navigate = useNavigate();
@@ -10,6 +11,11 @@ export default function CheckoutPage() {
   const { isAuthenticated } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [discountCode, setDiscountCode] = useState('');
+  const [appliedDiscount, setAppliedDiscount] = useState(null);
+  const [discountError, setDiscountError] = useState('');
+  const [validatingDisc, setValidatingDisc] = useState(false);
+  const [myDiscounts, setMyDiscounts] = useState([]);
 
   const [formData, setFormData] = useState({
     shipping_full_name: '',
@@ -21,7 +27,40 @@ export default function CheckoutPage() {
   // Calculate totals
   const subtotal = (cart && Array.isArray(cart)) ? cart.reduce((sum, item) => sum + (Number(item.price) * item.quantity), 0) : 0;
   const shipping = subtotal > 500000 ? 0 : 30000;
-  const total = subtotal + shipping;
+  const discountAmount = appliedDiscount ? appliedDiscount.discount_amount : 0;
+  const total = Math.max(0, subtotal + shipping - discountAmount);
+
+  const handleApplyDiscount = async () => {
+    if (!discountCode.trim()) return;
+    setValidatingDisc(true);
+    setDiscountError('');
+    try {
+      const { data } = await paymentService.validateDiscount(discountCode.trim(), subtotal + shipping);
+      if (data.success) {
+        setAppliedDiscount(data.data);
+      } else {
+        setDiscountError(data.message || 'Mã không hợp lệ');
+      }
+    } catch (err) {
+      setDiscountError(err.response?.data?.message || 'Lỗi kiểm tra mã');
+    } finally {
+      setValidatingDisc(false);
+    }
+  };
+
+  const handleRemoveDiscount = () => {
+    setAppliedDiscount(null);
+    setDiscountCode('');
+    setDiscountError('');
+  };
+
+  // Fetch user's available discounts
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    paymentService.getMyDiscounts().then(({ data }) => {
+      if (data.success) setMyDiscounts(data.data.filter(d => !d.is_used));
+    }).catch(() => {});
+  }, [isAuthenticated]);
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -49,6 +88,7 @@ export default function CheckoutPage() {
       const { data } = await api.post('/orders', {
         ...formData,
         items,
+        discount_code: appliedDiscount ? appliedDiscount.code : undefined,
       });
 
       if (data.success) {
@@ -238,6 +278,72 @@ export default function CheckoutPage() {
             <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100 sticky top-4">
               <h2 className="text-xl font-semibold text-gray-900 mb-6">Tổng quan đơn hàng</h2>
 
+              {/* Discount Input */}
+              <div className="mb-6">
+                {appliedDiscount ? (
+                  <div className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-xl">
+                    <div>
+                      <p className="text-sm font-medium text-green-700">Mã giảm giá</p>
+                      <p className="text-xs text-green-600">{appliedDiscount.code}</p>
+                      <p className="text-xs text-green-500 mt-0.5">
+                        -{formatPrice(appliedDiscount.discount_amount)}
+                      </p>
+                    </div>
+                    <button
+                      onClick={handleRemoveDiscount}
+                      className="p-1.5 text-green-600 hover:text-green-800 transition-colors"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={discountCode}
+                        onChange={(e) => setDiscountCode(e.target.value)}
+                        placeholder="Nhập mã giảm giá"
+                        className="flex-1 px-3 py-2.5 text-sm border border-gray-200 rounded-xl outline-none focus:border-black transition-colors"
+                      />
+                      <button
+                        onClick={handleApplyDiscount}
+                        disabled={validatingDisc || !discountCode.trim()}
+                        className="px-4 py-2.5 text-sm bg-black text-white rounded-xl hover:bg-neutral-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        {validatingDisc ? '...' : 'Áp dụng'}
+                      </button>
+                    </div>
+                    {discountError && (
+                      <p className="text-xs text-red-500 mt-1.5">{discountError}</p>
+                    )}
+                    {myDiscounts.length > 0 && (
+                      <div className="mt-2">
+                        <p className="text-xs text-gray-500 mb-1.5">Mã của bạn:</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {myDiscounts.slice(0, 3).map((d) => (
+                            <button
+                              key={d.id}
+                              onClick={() => {
+                                setDiscountCode(d.code);
+                                paymentService.validateDiscount(d.code, subtotal + shipping).then(({ data }) => {
+                                  if (data.success) setAppliedDiscount(data.data);
+                                }).catch(() => {});
+                              }}
+                              className="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded-md text-gray-700 transition-colors"
+                            >
+                              {d.code}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
               <div className="space-y-4">
                 <div className="flex justify-between text-gray-600">
                   <span>Tạm tính</span>
@@ -255,6 +361,12 @@ export default function CheckoutPage() {
                 </div>
                 {shipping > 0 && (
                   <p className="text-xs text-gray-500">Miễn phí vận chuyển đơn hàng từ 500.000đ</p>
+                )}
+                {appliedDiscount && (
+                  <div className="flex justify-between text-green-600">
+                    <span>Giảm giá</span>
+                    <span className="font-medium">-{formatPrice(discountAmount)}</span>
+                  </div>
                 )}
                 <div className="border-t pt-4 flex justify-between text-xl font-bold text-gray-900">
                   <span>Tổng cộng</span>

@@ -10,6 +10,8 @@ export const paymentService = {
   // Get order detail
   getOrderDetail: (orderId) => api.get(`/orders/${orderId}`),
   cancelOrder: (orderId) => api.put(`/orders/${orderId}/cancel`),
+  getMyDiscounts: () => api.get('/discounts/my'),
+  validateDiscount: (code, orderTotal) => api.post('/discounts/validate', { code, order_total: orderTotal }),
 
   // Generate payment QR
   generatePaymentQR: (orderId) => api.post('/payment/generate-qr', { orderId }),

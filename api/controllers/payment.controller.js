@@ -1,4 +1,5 @@
 import pool from '../config/db.js';
+import { checkAndAssignRules } from './discount.controller.js';
 
 // =========================================
 // GENERATE QR PAYMENT
@@ -151,7 +152,7 @@ export const sepayWebhook = async (req, res) => {
 
     // Find order by payment code (use LIKE because bank may strip dashes/truncate)
     const orderResult = await pool.query(
-      `SELECT id, total_amount, payment_status FROM orders WHERE payment_code LIKE $1 || '%'`,
+      `SELECT id, user_id, total_amount, payment_status FROM orders WHERE payment_code LIKE $1 || '%'`,
       [paymentCode]
     );
 
@@ -191,6 +192,9 @@ export const sepayWebhook = async (req, res) => {
        WHERE id = $3`,
       [new Date(transactionDate || Date.now()), transactionId, order.id]
     );
+
+    // Auto-assign discount rules based on purchase history
+    await checkAndAssignRules(order.id, order.user_id);
 
     return res.status(200).json({
       success: true,

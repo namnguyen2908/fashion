@@ -16,6 +16,7 @@ import inventoryRoutes from "./routes/inventory.js";
 import paymentRoutes from "./routes/payment.js";
 import orderRoutes from "./routes/order.js";
 import roleRoutes from "./routes/role.js";
+import discountRoutes from "./routes/discount.js";
 
 
 dotenv.config();
@@ -44,6 +45,7 @@ app.use("/api/inventory", inventoryRoutes);
 app.use("/api/payment", paymentRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/roles", roleRoutes);
+app.use("/api/discounts", discountRoutes);
 
 
 app.get("/", (req, res) => {
