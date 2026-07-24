@@ -18,6 +18,12 @@ const MODULES = [
     ],
   },
   {
+    label: "Khuyến mãi",
+    children: [
+      { to: "/admin/discounts", label: "Quy tắc giảm giá", end: false },
+    ],
+  },
+  {
     label: "Quản trị",
     children: [
       { to: "/admin/roles", label: "Vai trò & Phân quyền", end: false },

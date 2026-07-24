@@ -144,6 +144,13 @@ export default function SiteHeader({ categoryTree }) {
                   >
                     Đơn hàng của tôi
                   </Link>
+                  <Link
+                    to="/my-vouchers"
+                    className="block px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
+                    onClick={() => setUserMenuOpen(false)}
+                  >
+                    Voucher của tôi
+                  </Link>
                   <button
                     type="button"
                     className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
