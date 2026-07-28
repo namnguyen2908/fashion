@@ -31,7 +31,7 @@ export const getCart = async (req, res) => {
                 ci.id as cart_item_id,
                 ci.quantity,
                 pv.id as variant_id,
-                pv.price,
+                 pv.list_price as price,
                 pv.sku,
                 pv.size,
                 pv.color,
@@ -48,7 +48,7 @@ export const getCart = async (req, res) => {
 
         const items = itemsResult.rows;
         const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
-        const totalAmount = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+        const totalAmount = items.reduce((sum, item) => sum + (Number(item.price) * item.quantity), 0);
 
         return res.status(200).json({
             success: true,

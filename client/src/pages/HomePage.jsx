@@ -70,14 +70,13 @@ const enrichProduct = async (product) => {
     variants,
     images,
     colors: getUniqueColorsFromVariants(variants),
-    price: displayVariant?.price ?? 0,
-    list_price: displayVariant?.list_price ?? null,
+    price: displayVariant?.list_price ?? 0,
     old_price: displayVariant?.old_price ?? null,
     defaultImage,
     isOnSale:
       displayVariant != null &&
       displayVariant.old_price != null &&
-      Number(displayVariant.old_price) > Number(displayVariant.price),
+      Number(displayVariant.old_price) > Number(displayVariant.list_price),
   };
 };
 
@@ -123,7 +122,7 @@ const fetchProductsByCategories = async (categoryIds) => {
 function ProductCard({ product }) {
   const [activeImage, setActiveImage] = useState(product.defaultImage);
   const [hoveredColor, setHoveredColor] = useState(null);
-  const discount = calcDiscountLabel(product.list_price, product.price, product.old_price);
+  const discount = calcDiscountLabel(product.price, product.old_price);
 
   useEffect(() => {
     setActiveImage(product.defaultImage);
@@ -161,15 +160,11 @@ function ProductCard({ product }) {
         </Link>
         <div className="flex items-baseline gap-2">
           <span className="text-sm font-medium tracking-wide">{formatVND(product.price)}</span>
-          {product.old_price && Number(product.old_price) > Number(product.price) ? (
+          {product.old_price && Number(product.old_price) > Number(product.price) && (
               <span className="text-xs text-neutral-400 line-through">
                 {formatVND(product.old_price)}
               </span>
-            ) : product.list_price && (
-              <span className="text-xs text-neutral-400 line-through">
-                {formatVND(product.list_price)}
-              </span>
-            )}
+          )}
         </div>
         {product.colors.length > 0 && (
           <div className="flex items-center gap-1.5 pt-0.5">
