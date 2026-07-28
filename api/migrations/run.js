@@ -14,6 +14,7 @@ const migrations = [
     '005_backfill_old_price.sql',
     '006_create_roles_and_permissions.sql',
     '007_create_discount_tables.sql',
+    '008_rename_price_to_cost_price.sql',
 ];
 
 try {

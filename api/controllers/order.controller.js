@@ -46,7 +46,7 @@ export const createOrder = async (req, res) => {
 
       // Get variant info
       const variantResult = await pool.query(
-        `SELECT pv.id, pv.price, pv.product_id, p.name as product_name
+        `SELECT pv.id, pv.list_price, pv.product_id, p.name as product_name
          FROM product_variants pv
          JOIN products p ON pv.product_id = p.id
          WHERE pv.id = $1 AND pv.is_active = true`,
@@ -61,13 +61,13 @@ export const createOrder = async (req, res) => {
       }
 
       const variant = variantResult.rows[0];
-      const itemTotal = Number(variant.price) * quantity;
+      const itemTotal = Number(variant.list_price) * quantity;
       totalAmount += itemTotal;
 
       orderItems.push({
         variant_id,
         quantity,
-        price: variant.price,
+        price: variant.list_price,
         product_name: variant.product_name
       });
     }

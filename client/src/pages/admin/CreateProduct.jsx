@@ -23,7 +23,7 @@ function cartesianVariants(colors, sizes) {
       key: `${color}-${size}`,
       color,
       size,
-      price: "",
+      cost_price: "",
       list_price: "",
     }))
   );
@@ -289,8 +289,8 @@ export default function CreateProduct() {
       return;
     }
     for (const row of variantRows) {
-      if (!row.price || Number(row.price) <= 0) {
-        setError("Mỗi biến thể cần có giá bán hợp lệ.");
+      if (!row.cost_price || Number(row.cost_price) <= 0) {
+        setError("Mỗi biến thể cần có giá vốn hợp lệ.");
         return;
       }
     }
@@ -304,7 +304,7 @@ export default function CreateProduct() {
             product_id: productId,
             color: row.color,
             size: row.size,
-            price: Number(row.price),
+            cost_price: Number(row.cost_price),
             list_price: row.list_price ? Number(row.list_price) : null,
           });
           return data;
@@ -551,8 +551,8 @@ export default function CreateProduct() {
                     <thead>
                       <tr className="bg-neutral-50 text-left text-xs uppercase tracking-wider text-neutral-500">
                         <th className="px-3 py-3">Biến thể</th>
-                        <th className="px-3 py-3">Giá bán</th>
-                        <th className="px-3 py-3">Giá gốc</th>
+                        <th className="px-3 py-3">Giá vốn</th>
+                        <th className="px-3 py-3">Giá niêm yết</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -566,8 +566,8 @@ export default function CreateProduct() {
                               type="number"
                               min="1"
                               required
-                              value={row.price}
-                              onChange={(e) => updateVariantRow(row.key, "price", e.target.value)}
+                              value={row.cost_price}
+                              onChange={(e) => updateVariantRow(row.key, "cost_price", e.target.value)}
                               className="w-28 border border-neutral-200 rounded px-2 py-1.5 text-sm"
                               placeholder="0"
                             />

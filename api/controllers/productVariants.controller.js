@@ -36,7 +36,7 @@ export const getVariantsByProductId = async (req, res) => {
 
         const result = await pool.query(
             `
-            SELECT id, product_id, color, size, sku, price, list_price, old_price, is_active, created_at, updated_at
+            SELECT id, product_id, color, size, sku, cost_price, list_price, old_price, is_active, created_at, updated_at
             FROM product_variants
             WHERE product_id = $1 AND is_active = true
             ORDER BY created_at DESC
@@ -78,7 +78,7 @@ export const getVariantById = async (req, res) => {
 
         const result = await pool.query(
             `
-            SELECT pv.id, pv.product_id, pv.color, pv.size, pv.sku, pv.price, pv.list_price, pv.old_price, pv.is_active, pv.created_at, pv.updated_at,
+            SELECT pv.id, pv.product_id, pv.color, pv.size, pv.sku, pv.cost_price, pv.list_price, pv.old_price, pv.is_active, pv.created_at, pv.updated_at,
                    p.name AS product_name
             FROM product_variants pv
             LEFT JOIN products p ON pv.product_id = p.id
@@ -112,7 +112,7 @@ export const adminGetVariantById = async (req, res) => {
 
         const result = await pool.query(
             `
-            SELECT pv.id, pv.product_id, pv.color, pv.size, pv.sku, pv.price, pv.list_price, pv.old_price, pv.is_active, pv.created_at, pv.updated_at,
+            SELECT pv.id, pv.product_id, pv.color, pv.size, pv.sku, pv.cost_price, pv.list_price, pv.old_price, pv.is_active, pv.created_at, pv.updated_at,
                    p.name AS product_name
             FROM product_variants pv
             LEFT JOIN products p ON pv.product_id = p.id
@@ -141,16 +141,16 @@ export const createVariant = async (req, res) => {
             product_id,
             color = '',
             size = '',
-            price,
+            cost_price,
             list_price = null,
             is_active = true
         } = req.body;
 
-        if (!product_id || price === undefined) {
-            return res.status(400).json({ success: false, message: 'Product and Price are required' });
+        if (!product_id || cost_price === undefined) {
+            return res.status(400).json({ success: false, message: 'Product and cost price are required' });
         }
-        if (Number(price) <= 0) {
-            return res.status(400).json({ success: false, message: 'Invalid price' });
+        if (Number(cost_price) <= 0) {
+            return res.status(400).json({ success: false, message: 'Invalid cost price' });
         }
 
         // TỐI ƯU HIỆU NĂNG: Loại bỏ SELECT check trùng bằng code. Tận dụng tối đa Partial Unique Index từ DB.
@@ -161,11 +161,11 @@ export const createVariant = async (req, res) => {
 
         const result = await pool.query(
             `
-            INSERT INTO product_variants(product_id, color, size, sku, price, list_price, old_price, is_active)
-            VALUES($1, $2, $3, $4, $5, $6, $5, $7)
-            RETURNING id, product_id, color, size, sku, price, list_price, old_price, is_active, created_at, updated_at
+            INSERT INTO product_variants(product_id, color, size, sku, cost_price, list_price, old_price, is_active)
+            VALUES($1, $2, $3, $4, $5, $6, $6, $7)
+            RETURNING id, product_id, color, size, sku, cost_price, list_price, old_price, is_active, created_at, updated_at
             `,
-            [product_id, color, size, sku, price, list_price, is_active]
+            [product_id, color, size, sku, cost_price, list_price, is_active]
         );
 
         // Làm sạch Cache danh sách để Client cập nhật sản phẩm mới
@@ -190,15 +190,15 @@ export const createVariant = async (req, res) => {
 export const updateVariant = async (req, res) => {
     try {
         const { id } = req.params;
-        const { color, size, price, list_price, is_active } = req.body;
+        const { color, size, cost_price, list_price, is_active } = req.body;
 
-        if (color === undefined && size === undefined && price === undefined && 
+        if (color === undefined && size === undefined && cost_price === undefined && 
             list_price === undefined && is_active === undefined) {
             return res.status(400).json({ success: false, message: 'No fields to update' });
         }
 
-        if (price !== undefined && Number(price) <= 0) {
-            return res.status(400).json({ success: false, message: 'Price must be greater than 0' });
+        if (cost_price !== undefined && Number(cost_price) <= 0) {
+            return res.status(400).json({ success: false, message: 'Cost price must be greater than 0' });
         }
 
         // Lấy thông tin gốc để biết sản phẩm cha phục vụ xóa cache
@@ -217,7 +217,7 @@ export const updateVariant = async (req, res) => {
 
         if (color !== undefined) { values.push(color); fields.push(`color = $${values.length}`); }
         if (size !== undefined) { values.push(size); fields.push(`size = $${values.length}`); }
-        if (price !== undefined) { values.push(price); fields.push(`price = $${values.length}`); }
+        if (cost_price !== undefined) { values.push(cost_price); fields.push(`cost_price = $${values.length}`); }
         if (list_price !== undefined) { values.push(list_price); fields.push(`list_price = $${values.length}`); }
         if (is_active !== undefined) { values.push(is_active); fields.push(`is_active = $${values.length}`); }
 
@@ -228,7 +228,7 @@ export const updateVariant = async (req, res) => {
             UPDATE product_variants
             SET ${fields.join(', ')}
             WHERE id = $${values.length}
-            RETURNING id, product_id, color, size, sku, price, list_price, old_price, is_active, created_at, updated_at
+            RETURNING id, product_id, color, size, sku, cost_price, list_price, old_price, is_active, created_at, updated_at
         `;
 
         const result = await pool.query(query, values);
