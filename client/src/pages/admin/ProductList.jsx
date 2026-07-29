@@ -4,15 +4,6 @@ import api from "../../services/api";
 import { IconSpinner, IconEye, IconTrash, IconPlay, IconSearch } from "../../components/admin/Icons";
 import AutocompleteSelect from "../../components/admin/AutocompleteSelect";
 
-const formatDate = (value) => {
-  if (!value) return "—";
-  return new Intl.DateTimeFormat("vi-VN", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(new Date(value));
-};
-
 const STATUS_LABELS = {
   incomplete: { icon: "!", class: "text-amber-600 bg-amber-50 border-amber-200", label: "Chưa hoàn thành" },
   missing_variants: { icon: "!", class: "text-amber-600 bg-amber-50 border-amber-200", label: "Thiếu biến thể" },
@@ -53,13 +44,14 @@ export default function ProductList() {
   const [searchInput, setSearchInput] = useState("");
   const [categories, setCategories] = useState([]);
   const [categoryFilter, setCategoryFilter] = useState("");
+  const [togglingId, setTogglingId] = useState(null);
   const debounceRef = useRef(null);
 
   const fetchProducts = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const params = { page, limit: 15 };
+      const params = { page, limit: 15, show_all: "true" };
       if (search.trim()) params.search = search.trim();
       if (categoryFilter) params.category = categoryFilter;
 
@@ -91,6 +83,18 @@ export default function ProductList() {
       alert(err?.response?.data?.message || "Không thể xóa sản phẩm.");
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const handleToggleActive = async (product) => {
+    setTogglingId(product.id);
+    try {
+      await api.patch(`/products/toggle-active/${product.id}`);
+      fetchProducts();
+    } catch (err) {
+      alert(err?.response?.data?.message || "Lỗi thay đổi trạng thái.");
+    } finally {
+      setTogglingId(null);
     }
   };
 
@@ -176,7 +180,7 @@ export default function ProductList() {
                       <th className="px-4 py-3 font-medium">Tên sản phẩm</th>
                       <th className="px-4 py-3 font-medium hidden sm:table-cell">Danh mục</th>
                       <th className="px-4 py-3 font-medium hidden md:table-cell">Trạng thái</th>
-                      <th className="px-4 py-3 font-medium hidden lg:table-cell">Ngày tạo</th>
+                      <th className="px-4 py-3 font-medium text-center w-24">Bán</th>
                       <th className="px-4 py-3 font-medium text-right">Thao tác</th>
                     </tr>
                   </thead>
@@ -221,8 +225,25 @@ export default function ProductList() {
                               <span>{st.label}</span>
                             </span>
                           </td>
-                          <td className="px-4 py-3 text-neutral-500 text-xs hidden lg:table-cell whitespace-nowrap">
-                            {formatDate(product.created_at)}
+                          <td className="px-4 py-3 text-center">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleActive(product)}
+                              disabled={togglingId === product.id}
+                              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                                product.is_active
+                                  ? "bg-green-50 text-green-700 hover:bg-green-100"
+                                  : "bg-neutral-100 text-neutral-500 hover:bg-neutral-200"
+                              }`}
+                            >
+                              {togglingId === product.id ? (
+                                <IconSpinner className="w-3 h-3" />
+                              ) : product.is_active ? (
+                                "Bán"
+                              ) : (
+                                "Ẩn"
+                              )}
+                            </button>
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center justify-end gap-2">

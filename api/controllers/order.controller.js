@@ -1,4 +1,5 @@
 import pool from '../config/db.js';
+import { effectivePriceSubquery, formatPriceData } from '../utils/price.js';
 
 // =========================================
 // CREATE ORDER (CHECKOUT)
@@ -44,14 +45,14 @@ export const createOrder = async (req, res) => {
         });
       }
 
-      // Get variant info
-      const variantResult = await pool.query(
-        `SELECT pv.id, pv.list_price, pv.product_id, p.name as product_name
-         FROM product_variants pv
-         JOIN products p ON pv.product_id = p.id
-         WHERE pv.id = $1 AND pv.is_active = true`,
-        [variant_id]
-      );
+      // Get variant info with effective price
+      const variantResult = await pool.query(`
+        SELECT pv.id, pv.product_id, p.name as product_name,
+               ${effectivePriceSubquery('pv.id')} AS price_data
+        FROM product_variants pv
+        JOIN products p ON pv.product_id = p.id
+        WHERE pv.id = $1 AND pv.is_active = true
+      `, [variant_id]);
 
       if (variantResult.rows.length === 0) {
         return res.status(404).json({
@@ -60,15 +61,16 @@ export const createOrder = async (req, res) => {
         });
       }
 
-      const variant = variantResult.rows[0];
-      const itemTotal = Number(variant.list_price) * quantity;
+      const v = formatPriceData(variantResult.rows[0]);
+      const effectivePrice = Number(v.effective_price);
+      const itemTotal = effectivePrice * quantity;
       totalAmount += itemTotal;
 
       orderItems.push({
         variant_id,
         quantity,
-        price: variant.list_price,
-        product_name: variant.product_name
+        price: effectivePrice,
+        product_name: v.product_name
       });
     }
 

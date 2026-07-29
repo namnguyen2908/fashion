@@ -12,11 +12,12 @@ import productVariantsRoutes from "./routes/productVariants.js";
 import productImagesRoutes from "./routes/productImages.js"
 import bannerRoutes from "./routes/banner.js";
 import cartRoutes from "./routes/cart.js";
-import inventoryRoutes from "./routes/inventory.js";
+import warehouseRoutes from "./routes/warehouse.js";
 import paymentRoutes from "./routes/payment.js";
 import orderRoutes from "./routes/order.js";
 import roleRoutes from "./routes/role.js";
 import discountRoutes from "./routes/discount.js";
+import saleRoutes from "./routes/sale.js";
 
 
 dotenv.config();
@@ -41,11 +42,12 @@ app.use("/api/product-variants", productVariantsRoutes);
 app.use("/api/product-images", productImagesRoutes);
 app.use("/api/banners", bannerRoutes);
 app.use("/api/carts", cartRoutes);
-app.use("/api/inventory", inventoryRoutes);
+app.use("/api/warehouse", warehouseRoutes);
 app.use("/api/payment", paymentRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/roles", roleRoutes);
 app.use("/api/discounts", discountRoutes);
+app.use("/api/sales", saleRoutes);
 
 
 app.get("/", (req, res) => {

@@ -1,4 +1,5 @@
 import pool from '../config/db.js';
+import { effectivePriceSubquery, formatPriceData } from '../utils/price.js';
 
 // =========================================
 // GET USER CART
@@ -25,30 +26,27 @@ export const getCart = async (req, res) => {
 
         const cartId = cartResult.rows[0].id;
 
-        const itemsResult = await pool.query(
-            `
+        const itemsResult = await pool.query(`
             SELECT
                 ci.id as cart_item_id,
                 ci.quantity,
                 pv.id as variant_id,
-                 pv.list_price as price,
                 pv.sku,
                 pv.size,
                 pv.color,
                 p.name as product_name,
                 p.slug as product_slug,
+                ${effectivePriceSubquery('pv.id')} AS price_data,
                 (SELECT image_url FROM product_images WHERE product_id = p.id AND (color = pv.color OR is_thumbnail = true) ORDER BY (color = pv.color) DESC NULLS LAST, is_thumbnail DESC LIMIT 1) as images
             FROM cart_items ci
             JOIN product_variants pv ON ci.variant_id = pv.id
             JOIN products p ON pv.product_id = p.id
             WHERE ci.cart_id = $1
-            `,
-            [cartId]
-        );
+        `, [cartId]);
 
-        const items = itemsResult.rows;
+        const items = itemsResult.rows.map(v => formatPriceData(v));
         const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
-        const totalAmount = items.reduce((sum, item) => sum + (Number(item.price) * item.quantity), 0);
+        const totalAmount = items.reduce((sum, item) => sum + (Number(item.effective_price) * item.quantity), 0);
 
         return res.status(200).json({
             success: true,

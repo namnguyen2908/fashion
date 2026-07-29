@@ -10,6 +10,7 @@ import {
     invalidateProductRelatedCaches,
 } from '../utils/cache.js';
 import { generateSlug } from '../utils/slugify.js';
+import { effectivePriceSubquery, formatPriceData } from '../utils/price.js';
 
 const stripTotalCount = (rows) =>
     rows.map(({ total_count, ...product }) => product);
@@ -23,7 +24,8 @@ export const getProducts = async (req, res) => {
             page = 1,
             limit = 10,
             search = '',
-            category
+            category,
+            show_all
         } = req.query;
 
         const currentPage = Math.max(Number(page), 1);
@@ -56,10 +58,20 @@ export const getProducts = async (req, res) => {
                 p.slug,
                 p.description,
                 p.created_at,
+                p.is_active,
                 c.id AS category_id,
                 c.name AS category_name,
                 (SELECT COUNT(*) FROM product_variants pv WHERE pv.product_id = p.id) AS variant_count,
                 (SELECT COUNT(*) FROM product_images pi WHERE pi.product_id = p.id) AS image_count,
+                (SELECT COALESCE(jsonb_agg(jsonb_build_object(
+                    'id', pv.id,
+                    'color', pv.color,
+                    'size', pv.size,
+                    'sku', pv.sku,
+                    'is_active', pv.is_active,
+                    'price', COALESCE((SELECT price FROM variant_prices WHERE variant_id = pv.id), 0),
+                    'price_data', ${effectivePriceSubquery('pv.id')}
+                )), '[]'::jsonb) FROM product_variants pv WHERE pv.product_id = p.id) AS variants,
                 COUNT(*) OVER() AS total_count
             FROM products p
             LEFT JOIN categories c
@@ -72,6 +84,10 @@ export const getProducts = async (req, res) => {
         if (search) {
             values.push(`%${search}%`);
             query += ` AND p.name ILIKE $${values.length}`;
+        }
+
+        if (!show_all) {
+            query += ` AND p.is_active = true`;
         }
 
         if (category) {
@@ -88,6 +104,12 @@ export const getProducts = async (req, res) => {
         const result = await pool.query(query, values);
 
         const products = result.rows;
+
+        products.forEach(p => {
+            if (p.variants) {
+                p.variants = p.variants.map(v => formatPriceData(v));
+            }
+        });
 
         const total =
             products.length > 0
@@ -124,7 +146,7 @@ export const getProductById = async (req, res) => {
     try {
         const { id } = req.params;
 
-        const cacheKey = `product:${id}`;
+        const cacheKey = `v2:product:${id}`;
 
         const cached = await getCacheEntry(cacheKey);
 
@@ -138,7 +160,6 @@ export const getProductById = async (req, res) => {
         if (cached.hit && cached.value) {
             return res.status(200).json({
                 success: true,
-                source: 'redis',
                 data: cached.value
             });
         }
@@ -152,7 +173,16 @@ export const getProductById = async (req, res) => {
                 p.description,
                 p.category_id,
                 p.created_at,
-                c.name AS category_name
+                c.name AS category_name,
+                (SELECT COALESCE(jsonb_agg(jsonb_build_object(
+                    'id', pv.id,
+                    'color', pv.color,
+                    'size', pv.size,
+                    'sku', pv.sku,
+                    'is_active', pv.is_active,
+                    'price', COALESCE((SELECT price FROM variant_prices WHERE variant_id = pv.id), 0),
+                    'price_data', ${effectivePriceSubquery('pv.id')}
+                )), '[]'::jsonb) FROM product_variants pv WHERE pv.product_id = p.id) AS variants
             FROM products p
             LEFT JOIN categories c
             ON p.category_id = c.id
@@ -172,7 +202,11 @@ export const getProductById = async (req, res) => {
 
         const product = result.rows[0];
 
-        await setCache(cacheKey, product, 1800);
+        if (product.variants) {
+            product.variants = product.variants.map(v => formatPriceData(v));
+        }
+
+        await setCache(cacheKey, product, 60);
 
         return res.status(200).json({
             success: true,
@@ -205,7 +239,16 @@ export const getProductBySlug = async (req, res) => {
                 p.description,
                 p.category_id,
                 p.created_at,
-                c.name AS category_name
+                c.name AS category_name,
+                (SELECT COALESCE(jsonb_agg(jsonb_build_object(
+                    'id', pv.id,
+                    'color', pv.color,
+                    'size', pv.size,
+                    'sku', pv.sku,
+                    'is_active', pv.is_active,
+                    'price', COALESCE((SELECT price FROM variant_prices WHERE variant_id = pv.id), 0),
+                    'price_data', ${effectivePriceSubquery('pv.id')}
+                )), '[]'::jsonb) FROM product_variants pv WHERE pv.product_id = p.id) AS variants
             FROM products p
             LEFT JOIN categories c
             ON p.category_id = c.id
@@ -221,9 +264,15 @@ export const getProductBySlug = async (req, res) => {
             });
         }
 
+        const product = result.rows[0];
+
+        if (product.variants) {
+            product.variants = product.variants.map(v => formatPriceData(v));
+        }
+
         return res.status(200).json({
             success: true,
-            data: result.rows[0]
+            data: product
         });
     } catch (error) {
         console.log(error);
@@ -353,8 +402,7 @@ export const updateProduct = async (req, res) => {
             [category_id, name, slug, description ?? null, id]
         );
 
-        await deleteCache(`product:${id}`);
-        await incrCache('products:version');
+        await invalidateProductRelatedCaches(id);
 
         return res.status(200).json({
             success: true,
@@ -403,7 +451,6 @@ export const deleteProduct = async (req, res) => {
         );
 
         await invalidateProductRelatedCaches(id, variantIds);
-        await incrCache('products:version');
 
         return res.status(200).json({
             success: true,
@@ -416,5 +463,30 @@ export const deleteProduct = async (req, res) => {
             success: false,
             message: 'Server error'
         });
+    }
+};
+
+export const toggleProductActive = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const product = await pool.query(`SELECT id, is_active FROM products WHERE id = $1`, [id]);
+        if (product.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Product not found' });
+        }
+
+        const newStatus = !product.rows[0].is_active;
+        await pool.query(`UPDATE products SET is_active = $1 WHERE id = $2`, [newStatus, id]);
+
+        await invalidateProductRelatedCaches(id);
+
+        return res.status(200).json({
+            success: true,
+            message: newStatus ? 'Product activated' : 'Product deactivated',
+            data: { is_active: newStatus }
+        });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({ success: false, message: 'Server error' });
     }
 };
