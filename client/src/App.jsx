@@ -25,6 +25,14 @@ import RoleDashboard from './pages/admin/RoleDashboard';
 import UserDashboard from './pages/admin/UserDashboard';
 import CustomerList from './pages/admin/CustomerList';
 import DiscountDashboard from './pages/admin/DiscountDashboard';
+import StockList from './pages/admin/warehouse/StockList';
+import ReceiptList from './pages/admin/warehouse/ReceiptList';
+import CreateReceipt from './pages/admin/warehouse/CreateReceipt';
+import ReceiptDetail from './pages/admin/warehouse/ReceiptDetail';
+import SupplierList from './pages/admin/warehouse/SupplierList';
+import SupplierDetail from './pages/admin/warehouse/SupplierDetail';
+import SaleDashboard from './pages/admin/sale/SaleDashboard';
+import SaleDetail from './pages/admin/sale/SaleDetail';
 
 function App() {
   return (
@@ -60,6 +68,14 @@ function App() {
             <Route path="users" element={<UserDashboard />} />
             <Route path="customers" element={<CustomerList />} />
             <Route path="discounts" element={<DiscountDashboard />} />
+            <Route path="warehouse/stocks" element={<StockList />} />
+            <Route path="warehouse/receipts" element={<ReceiptList />} />
+            <Route path="warehouse/receipts/create" element={<CreateReceipt />} />
+            <Route path="warehouse/receipts/:id" element={<ReceiptDetail />} />
+            <Route path="warehouse/suppliers" element={<SupplierList />} />
+            <Route path="warehouse/suppliers/:id" element={<SupplierDetail />} />
+            <Route path="sales" element={<SaleDashboard />} />
+            <Route path="sales/:id" element={<SaleDetail />} />
           </Route>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />

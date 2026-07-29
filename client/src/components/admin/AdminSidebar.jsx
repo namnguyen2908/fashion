@@ -18,9 +18,18 @@ const MODULES = [
     ],
   },
   {
+    label: "Kho hàng",
+    children: [
+      { to: "/admin/warehouse/stocks", label: "Tồn kho", end: false },
+      { to: "/admin/warehouse/receipts", label: "Phiếu nhập", end: false },
+      { to: "/admin/warehouse/suppliers", label: "Nhà cung cấp", end: false },
+    ],
+  },
+  {
     label: "Khuyến mãi",
     children: [
       { to: "/admin/discounts", label: "Quy tắc giảm giá", end: false },
+      { to: "/admin/sales", label: "Chương trình sale", end: false },
     ],
   },
   {

@@ -47,7 +47,8 @@ export default function ProductDetail() {
 
   const [variantEdits, setVariantEdits] = useState({});
   const [savingVariantId, setSavingVariantId] = useState(null);
-  const [newVariant, setNewVariant] = useState({ color: "", size: "", cost_price: "", list_price: "" });
+  const [savingAll, setSavingAll] = useState(false);
+  const [newVariant, setNewVariant] = useState({ color: "", size: "", price: "" });
   const [addingVariant, setAddingVariant] = useState(false);
 
   const [uploadingImages, setUploadingImages] = useState(false);
@@ -99,8 +100,7 @@ export default function ProductDetail() {
         edits[v.id] = {
           color: normalizeColorName(v.color ?? ""),
           size: v.size ?? "",
-          cost_price: String(v.cost_price ?? ""),
-          list_price: v.list_price != null ? String(v.list_price) : "",
+          price: v.price != null ? String(v.price) : "",
         };
       });
       setVariantEdits(edits);
@@ -164,18 +164,13 @@ export default function ProductDetail() {
 
   const saveVariant = async (variantId) => {
     const row = variantEdits[variantId];
-    if (!row?.cost_price || Number(row.cost_price) <= 0) {
-      setError("Giá vốn phải lớn hơn 0.");
-      return;
-    }
     setSavingVariantId(variantId);
     setError("");
     try {
       await api.patch(`/product-variants/update-variant/${variantId}`, {
         color: row.color,
         size: row.size,
-        cost_price: Number(row.cost_price),
-        list_price: row.list_price ? Number(row.list_price) : null,
+        price: row.price ? Number(row.price) : null,
       });
       setMessage("Đã cập nhật biến thể.");
       await loadAll();
@@ -186,14 +181,32 @@ export default function ProductDetail() {
     }
   };
 
+  const saveAllVariants = async () => {
+    setSavingAll(true);
+    setError("");
+    try {
+      const ids = Object.keys(variantEdits);
+      await Promise.all(ids.map((variantId) => {
+        const row = variantEdits[variantId];
+        return api.patch(`/product-variants/update-variant/${variantId}`, {
+          color: row.color,
+          size: row.size,
+          price: row.price ? Number(row.price) : null,
+        });
+      }));
+      setMessage("Đã cập nhật tất cả biến thể.");
+      await loadAll();
+    } catch (err) {
+      setError(err?.response?.data?.message || "Lỗi khi lưu biến thể.");
+    } finally {
+      setSavingAll(false);
+    }
+  };
+
   const addVariant = async (e) => {
     e.preventDefault();
     if (!newVariant.color) {
       setError("Vui lòng chọn màu cho biến thể mới.");
-      return;
-    }
-    if (!newVariant.cost_price || Number(newVariant.cost_price) <= 0) {
-      setError("Giá vốn biến thể mới phải hợp lệ.");
       return;
     }
     setAddingVariant(true);
@@ -203,10 +216,9 @@ export default function ProductDetail() {
         product_id: Number(id),
         color: newVariant.color,
         size: newVariant.size,
-        cost_price: Number(newVariant.cost_price),
-        list_price: newVariant.list_price ? Number(newVariant.list_price) : null,
+        price: newVariant.price ? Number(newVariant.price) : null,
       });
-      setNewVariant({ color: "", size: "", cost_price: "", list_price: "" });
+      setNewVariant({ color: "", size: "", price: "" });
       setMessage("Đã thêm biến thể mới.");
       await loadAll();
     } catch (err) {
@@ -413,14 +425,33 @@ export default function ProductDetail() {
             <p className="text-sm text-neutral-500 bg-white border border-neutral-200 rounded-lg p-6">Chưa có biến thể.</p>
           ) : (
             <div className="bg-white border border-neutral-200 rounded-lg overflow-x-auto w-full">
-              <table className="w-full text-sm min-w-[800px]">
+              <div className="flex items-center gap-3 px-4 py-2.5 bg-neutral-50 border-b border-neutral-100">
+                <span className="text-xs text-neutral-500">Giá bán chung:</span>
+                <input type="number" min="0"
+                  onChange={(e) => {
+                    if (!e.target.value) return;
+                    setVariantEdits((prev) => {
+                      const next = { ...prev };
+                      Object.keys(next).forEach((id) => { next[id] = { ...next[id], price: e.target.value }; });
+                      return next;
+                    });
+                  }}
+                  placeholder="Nhập giá → áp dụng cho tất cả..."
+                  className="w-44 border border-neutral-200 rounded px-2 py-1.5 text-sm outline-none focus:border-neutral-400 bg-white"
+                />
+                <button type="button" onClick={saveAllVariants} disabled={savingAll}
+                  className="inline-flex items-center gap-1 ml-auto px-3 py-1.5 text-xs bg-black text-white rounded-md hover:bg-neutral-800 disabled:opacity-60">
+                  {savingAll && <IconSpinner className="w-3 h-3" />}
+                  Lưu tất cả
+                </button>
+              </div>
+              <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-neutral-50 text-xs uppercase tracking-wider text-neutral-500 text-left">
                     <th className="px-3 py-3">SKU</th>
                     <th className="px-3 py-3">Màu</th>
                     <th className="px-3 py-3">Size</th>
-                    <th className="px-3 py-3">Giá vốn</th>
-                    <th className="px-3 py-3">Giá niêm yết</th>
+                    <th className="px-3 py-3">Giá bán</th>
                     <th className="px-3 py-3 w-28" />
                   </tr>
                 </thead>
@@ -440,30 +471,14 @@ export default function ProductDetail() {
                         <input value={variantEdits[v.id]?.size ?? ""} onChange={(e) => updateVariantEdit(v.id, "size", e.target.value)} className="w-20 border border-neutral-200 rounded px-2 py-1 text-sm" />
                       </td>
                       <td className="px-3 py-2">
-                        <input type="number" min="1" value={variantEdits[v.id]?.cost_price ?? ""} onChange={(e) => updateVariantEdit(v.id, "cost_price", e.target.value)} className="w-28 border border-neutral-200 rounded px-2 py-1 text-sm" />
-                      </td>
-                      <td className="px-3 py-2">
-                        <input type="number" min="0" value={variantEdits[v.id]?.list_price ?? ""} onChange={(e) => updateVariantEdit(v.id, "list_price", e.target.value)} className="w-28 border border-neutral-200 rounded px-2 py-1 text-sm" />
+                        <input type="number" min="0" value={variantEdits[v.id]?.price ?? ""} onChange={(e) => updateVariantEdit(v.id, "price", e.target.value)} className="w-24 border border-neutral-200 rounded px-2 py-1 text-sm" />
                       </td>
                       <td className="px-3 py-2">
                         <div className="flex gap-1">
                           <button type="button" onClick={() => saveVariant(v.id)} disabled={savingVariantId === v.id} className="text-xs px-2 py-1 bg-black text-white rounded hover:bg-neutral-800 disabled:opacity-50">
                             {savingVariantId === v.id ? "..." : "Lưu"}
                           </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setConfirm({
-                                type: "variant",
-                                id: v.id,
-                                title: "Xóa biến thể",
-                                message: `Xóa biến thể ${v.sku}?`,
-                              })
-                            }
-                            className="text-xs px-2 py-1 text-red-600 border border-red-100 rounded hover:bg-red-50"
-                          >
-                            Xóa
-                          </button>
+                          <button type="button" onClick={() => setConfirm({ type: "variant", id: v.id, title: "Xóa biến thể", message: `Xóa biến thể ${v.sku}?`})} className="text-xs px-2 py-1 text-red-600 border border-red-100 rounded hover:bg-red-50">Xóa</button>
                         </div>
                       </td>
                     </tr>
@@ -475,7 +490,7 @@ export default function ProductDetail() {
 
           <form onSubmit={addVariant} className="bg-white border border-neutral-200 rounded-lg p-6">
             <h3 className="text-sm font-medium mb-4">Thêm biến thể mới</h3>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
               <ColorSelect
                 value={newVariant.color}
                 onChange={(val) => setNewVariant((v) => ({ ...v, color: val }))}
@@ -483,8 +498,7 @@ export default function ProductDetail() {
                 required
               />
               <input placeholder="Size" value={newVariant.size} onChange={(e) => setNewVariant((v) => ({ ...v, size: e.target.value }))} className={inputClass} />
-              <input type="number" placeholder="Giá vốn *" required value={newVariant.cost_price} onChange={(e) => setNewVariant((v) => ({ ...v, cost_price: e.target.value }))} className={inputClass} />
-              <input type="number" placeholder="Giá niêm yết" value={newVariant.list_price} onChange={(e) => setNewVariant((v) => ({ ...v, list_price: e.target.value }))} className={inputClass} />
+              <input type="number" placeholder="Giá bán" value={newVariant.price} onChange={(e) => setNewVariant((v) => ({ ...v, price: e.target.value }))} className={inputClass} />
             </div>
             <button type="submit" disabled={addingVariant} className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 text-sm border border-neutral-300 rounded-md hover:bg-neutral-50 disabled:opacity-60">
               {addingVariant && <IconSpinner />}
