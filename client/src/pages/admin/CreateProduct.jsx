@@ -23,8 +23,7 @@ function cartesianVariants(colors, sizes) {
       key: `${color}-${size}`,
       color,
       size,
-      cost_price: "",
-      list_price: "",
+      price: "",
     }))
   );
 }
@@ -288,13 +287,6 @@ export default function CreateProduct() {
       setError('Nhấn "Tự động sinh biến thể" trước khi lưu.');
       return;
     }
-    for (const row of variantRows) {
-      if (!row.cost_price || Number(row.cost_price) <= 0) {
-        setError("Mỗi biến thể cần có giá vốn hợp lệ.");
-        return;
-      }
-    }
-
     setError("");
     setSavingVariants(true);
     try {
@@ -304,8 +296,7 @@ export default function CreateProduct() {
             product_id: productId,
             color: row.color,
             size: row.size,
-            cost_price: Number(row.cost_price),
-            list_price: row.list_price ? Number(row.list_price) : null,
+            price: row.price ? Number(row.price) : null,
           });
           return data;
         })
@@ -547,11 +538,21 @@ export default function CreateProduct() {
 
               {variantRows.length > 0 && (
                 <div className="overflow-x-auto border border-neutral-100 rounded-md">
+                  <div className="flex items-center gap-3 px-3 py-2.5 bg-neutral-50 border-b border-neutral-100">
+                    <span className="text-xs text-neutral-500">Giá niêm yết chung:</span>
+                    <input type="number" min="0"
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v) setVariantRows((rows) => rows.map((r) => ({ ...r, price: v })));
+                      }}
+                      placeholder="Nhập giá → áp dụng cho tất cả..."
+                      className="w-44 border border-neutral-200 rounded px-2 py-1.5 text-sm outline-none focus:border-neutral-400 bg-white"
+                    />
+                  </div>
                   <table className="w-full text-sm min-w-[640px]">
                     <thead>
                       <tr className="bg-neutral-50 text-left text-xs uppercase tracking-wider text-neutral-500">
                         <th className="px-3 py-3">Biến thể</th>
-                        <th className="px-3 py-3">Giá vốn</th>
                         <th className="px-3 py-3">Giá niêm yết</th>
                       </tr>
                     </thead>
@@ -564,20 +565,9 @@ export default function CreateProduct() {
                           <td className="px-3 py-2">
                             <input
                               type="number"
-                              min="1"
-                              required
-                              value={row.cost_price}
-                              onChange={(e) => updateVariantRow(row.key, "cost_price", e.target.value)}
-                              className="w-28 border border-neutral-200 rounded px-2 py-1.5 text-sm"
-                              placeholder="0"
-                            />
-                          </td>
-                          <td className="px-3 py-2">
-                            <input
-                              type="number"
                               min="0"
-                              value={row.list_price}
-                              onChange={(e) => updateVariantRow(row.key, "list_price", e.target.value)}
+                              value={row.price}
+                              onChange={(e) => updateVariantRow(row.key, "price", e.target.value)}
                               className="w-28 border border-neutral-200 rounded px-2 py-1.5 text-sm"
                               placeholder="—"
                             />

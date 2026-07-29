@@ -105,8 +105,8 @@ export default function ProductDetailPage() {
                       variants: vars,
                       images: imgs,
                       colors: getUniqueColorsFromVariants(vars),
-                      price: dv?.list_price ?? 0,
-                      old_price: dv?.old_price ?? null,
+                      price: dv?.effective_price ?? dv?.price ?? 0,
+                      old_price: dv?.is_on_sale ? dv?.original_price : null,
                       defaultImage: imgs.find((i) => i.is_thumbnail)?.image_url || imgs[0]?.image_url || null,
                     };
                   } catch {
@@ -302,15 +302,15 @@ export default function ProductDetailPage() {
             {selectedVariant && (
               <>
                 <span className="text-xl sm:text-2xl font-medium">
-                  {formatVND(selectedVariant.list_price)}
+                  {formatVND(selectedVariant.effective_price ?? selectedVariant.price)}
                 </span>
-                {selectedVariant.old_price != null && Number(selectedVariant.old_price) > Number(selectedVariant.list_price) && (
+                {selectedVariant.is_on_sale && (
                   <>
                     <span className="text-sm text-neutral-400 line-through">
-                      {formatVND(selectedVariant.old_price)}
+                      {formatVND(selectedVariant.original_price)}
                     </span>
                     <span className="text-xs text-red-500 font-medium">
-                      {calcDiscountLabel(selectedVariant.list_price, selectedVariant.old_price)}
+                      {calcDiscountLabel(selectedVariant.effective_price, selectedVariant.original_price)}
                     </span>
                   </>
                 )}

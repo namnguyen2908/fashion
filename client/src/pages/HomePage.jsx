@@ -70,13 +70,10 @@ const enrichProduct = async (product) => {
     variants,
     images,
     colors: getUniqueColorsFromVariants(variants),
-    price: displayVariant?.list_price ?? 0,
-    old_price: displayVariant?.old_price ?? null,
+    price: displayVariant?.effective_price ?? displayVariant?.price ?? 0,
+    old_price: displayVariant?.is_on_sale ? displayVariant?.original_price : null,
     defaultImage,
-    isOnSale:
-      displayVariant != null &&
-      displayVariant.old_price != null &&
-      Number(displayVariant.old_price) > Number(displayVariant.list_price),
+    isOnSale: displayVariant?.is_on_sale ?? false,
   };
 };
 
