@@ -15,6 +15,13 @@ const migrations = [
     '006_create_roles_and_permissions.sql',
     '007_create_discount_tables.sql',
     '008_rename_price_to_cost_price.sql',
+    '009_create_warehouse_tables.sql',
+    '010_update_warehouse_permissions.sql',
+    '011_create_suppliers.sql',
+    '012_create_supplier_variants.sql',
+    '013_pricing_rework.sql',
+    '014_simplify_variant_prices.sql',
+    '015_add_product_is_active.sql',
 ];
 
 try {
