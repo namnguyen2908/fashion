@@ -4,24 +4,8 @@ import { useCart } from "../../context/CartContext";
 import { useAuth } from "../../context/AuthContext";
 import { formatVND } from "../../utils/format";
 import { cloudinaryThumb } from "../../utils/cloudinary";
+import { getColorSwatchStyle } from "../../constants/colors";
 import api from "../../services/api";
-
-const colorToHex = (color) => {
-  const map = {
-    "Đen": "#1a1a1a",
-    "Trắng": "#f5f5f5",
-    "Be/Kem": "#f5e6d3",
-    "Nâu": "#8B6914",
-    "Xám": "#888",
-    "Xanh": "#3b82f6",
-    "Đỏ": "#dc2626",
-    "Hồng": "#ec4899",
-    "Vàng": "#eab308",
-    "Be": "#f5e6d3",
-    "Kem": "#fdf5e6",
-  };
-  return map[color] || "#ccc";
-};
 
 function QuantityStepper({ value, onIncrease, onDecrease, disabled }) {
   return (
@@ -238,7 +222,7 @@ export default function CartPage() {
                       <span className="flex items-center gap-1.5">
                         <span
                           className="w-2.5 h-2.5 rounded-full border border-neutral-200 shrink-0"
-                          style={{ backgroundColor: colorToHex(item.color) }}
+                          style={{ backgroundColor: getColorSwatchStyle(item.color).backgroundColor }}
                         />
                         {item.color}
                       </span>
