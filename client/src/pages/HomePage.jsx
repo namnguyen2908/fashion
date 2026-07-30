@@ -4,6 +4,7 @@ import api from "../services/api";
 import { getColorSwatchStyle } from "../constants/colors";
 import { getImageForColor, getUniqueColorsFromVariants } from "../utils/productImages";
 import { formatVND, calcDiscountLabel, pickDisplayVariant } from "../utils/format";
+import { cloudinaryThumb } from "../utils/cloudinary";
 import { IconChevron } from "../components/Icons";
 
 function useVisiblePerRow() {
@@ -287,6 +288,7 @@ function ProductCarousel({ title, products, loading }) {
 
 function HeroCarousel({ slides }) {
   const [active, setActive] = useState(0);
+  const [loaded, setLoaded] = useState({});
 
   useEffect(() => {
     setActive(0);
@@ -302,22 +304,41 @@ function HeroCarousel({ slides }) {
 
   if (slides.length === 0) {
     return (
-      <section className="relative w-full h-[70vh] sm:h-[80vh] lg:h-screen min-h-[400px] sm:min-h-[480px] lg:min-h-[520px] bg-neutral-900" />
+      <section className="relative w-full h-52 sm:h-72 lg:h-screen min-h-[192px] sm:min-h-[260px] lg:min-h-[520px] bg-neutral-900" />
     );
   }
 
   return (
-    <section className="relative w-full h-[70vh] sm:h-[80vh] lg:h-screen min-h-[400px] sm:min-h-[480px] lg:min-h-[520px] overflow-hidden bg-neutral-900">
-      {slides.map((src, index) => (
-        <div
-          key={src}
-          className={`absolute inset-0 transition-opacity duration-[1200ms] ease-in-out ${
-            index === active ? "opacity-100 z-10" : "opacity-0 z-0"
-          }`}
-        >
-          <img src={src} alt="" className="w-full h-full object-cover" loading="lazy" />
-        </div>
-      ))}
+    <section className="relative w-full h-52 sm:h-72 lg:h-screen min-h-[192px] sm:min-h-[260px] lg:min-h-[520px] overflow-hidden bg-neutral-900">
+      {slides.map((src, index) => {
+        const srcset = [640, 1024, 1920]
+          .map((w) => `${cloudinaryThumb(src, { width: w, crop: "lfill" })} ${w}w`)
+          .join(", ");
+        const blurSrc = cloudinaryThumb(src, { width: 120, blur: 1000 });
+        return (
+          <div
+            key={src}
+            className={`absolute inset-0 transition-opacity duration-[1200ms] ease-in-out ${
+              index === active ? "opacity-100 z-10" : "opacity-0 z-0"
+            }`}
+            style={{
+              backgroundImage: loaded[src] ? undefined : `url(${blurSrc})`,
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+            }}
+          >
+            <img
+              src={cloudinaryThumb(src, { width: 1920, crop: "lfill" })}
+              srcSet={srcset}
+              sizes="(max-width: 640px) 640px, (max-width: 1024px) 1024px, 1920px"
+              alt=""
+              className="w-full h-full object-cover"
+              fetchPriority={index === 0 ? "high" : "low"}
+              onLoad={() => setLoaded((prev) => ({ ...prev, [src]: true }))}
+            />
+          </div>
+        );
+      })}
       {slides.length > 1 && (
         <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-20 flex gap-2">
           {slides.map((src, index) => (
