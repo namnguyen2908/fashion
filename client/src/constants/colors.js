@@ -13,7 +13,11 @@ export const PRODUCT_COLORS = [
 ];
 
 const stripAccents = (str) =>
-  str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  str
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D");
 
 export const normalizeColorKey = (name) =>
   stripAccents((name || "").toLowerCase().trim()).replace(/\s+/g, " ");

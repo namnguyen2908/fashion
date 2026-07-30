@@ -1,9 +1,17 @@
 import cloudinary from '../config/cloudinary.js';
+import { getCache, setCache } from '../utils/cache.js';
 
 const BANNER_FOLDER = 'fashion-store/banners';
+const CACHE_KEY = 'banners';
+const CACHE_TTL = 3600;
 
 export const getBanners = async (req, res) => {
   try {
+    const cached = await getCache(CACHE_KEY);
+    if (cached) {
+      return res.status(200).json({ success: true, data: cached });
+    }
+
     const result = await cloudinary.api.resources({
       type: 'upload',
       resource_type: 'image',
@@ -21,6 +29,8 @@ export const getBanners = async (req, res) => {
         format: item.format,
         created_at: item.created_at,
       }));
+
+    await setCache(CACHE_KEY, banners, CACHE_TTL);
 
     return res.status(200).json({
       success: true,
