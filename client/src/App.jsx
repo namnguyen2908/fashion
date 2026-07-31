@@ -31,6 +31,10 @@ import CreateReceipt from './pages/admin/warehouse/CreateReceipt';
 import ReceiptDetail from './pages/admin/warehouse/ReceiptDetail';
 import SupplierList from './pages/admin/warehouse/SupplierList';
 import SupplierDetail from './pages/admin/warehouse/SupplierDetail';
+import WarehouseList from './pages/admin/warehouse/WarehouseList';
+import TransactionList from './pages/admin/warehouse/TransactionList';
+import AdjustmentCreate from './pages/admin/warehouse/AdjustmentCreate';
+import TransferCreate from './pages/admin/warehouse/TransferCreate';
 import SaleDashboard from './pages/admin/sale/SaleDashboard';
 import SaleDetail from './pages/admin/sale/SaleDetail';
 
@@ -68,10 +72,14 @@ function App() {
             <Route path="users" element={<UserDashboard />} />
             <Route path="customers" element={<CustomerList />} />
             <Route path="discounts" element={<DiscountDashboard />} />
-            <Route path="warehouse/stocks" element={<StockList />} />
+            <Route path="warehouse/stocks" element={<WarehouseList />} />
+            <Route path="warehouse/stocks/:warehouseId" element={<StockList />} />
             <Route path="warehouse/receipts" element={<ReceiptList />} />
             <Route path="warehouse/receipts/create" element={<CreateReceipt />} />
             <Route path="warehouse/receipts/:id" element={<ReceiptDetail />} />
+            <Route path="warehouse/transactions" element={<TransactionList />} />
+            <Route path="warehouse/adjustments" element={<AdjustmentCreate />} />
+            <Route path="warehouse/transfers" element={<TransferCreate />} />
             <Route path="warehouse/suppliers" element={<SupplierList />} />
             <Route path="warehouse/suppliers/:id" element={<SupplierDetail />} />
             <Route path="sales" element={<SaleDashboard />} />

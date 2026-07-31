@@ -22,6 +22,9 @@ const MODULES = [
     children: [
       { to: "/admin/warehouse/stocks", label: "Tồn kho", end: false },
       { to: "/admin/warehouse/receipts", label: "Phiếu nhập", end: false },
+      { to: "/admin/warehouse/transfers", label: "Chuyển kho", end: false },
+      { to: "/admin/warehouse/adjustments", label: "Điều chỉnh", end: false },
+      { to: "/admin/warehouse/transactions", label: "Lịch sử", end: false },
       { to: "/admin/warehouse/suppliers", label: "Nhà cung cấp", end: false },
     ],
   },
