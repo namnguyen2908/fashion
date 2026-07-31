@@ -22,6 +22,7 @@ const migrations = [
     '013_pricing_rework.sql',
     '014_simplify_variant_prices.sql',
     '015_add_product_is_active.sql',
+    '016_create_warehouse_model.sql',
 ];
 
 try {

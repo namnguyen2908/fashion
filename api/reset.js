@@ -2,7 +2,9 @@ import pool from './config/db.js';
 
 const tables = [
     'role_permissions', 'permissions', 'roles',
-    'inbound_items', 'inbound_notes', 'inventory',
+    'inventory_transactions', 'inventory_balances', 'goods_receipt_items', 'goods_receipts',
+    'warehouses', 'supplier_variants', 'suppliers',
+    'user_discounts', 'discount_rules', 'sale_variants', 'sales', 'variant_prices',
     'cart_items', 'carts', 'order_items', 'orders',
     'product_images', 'product_reviews', 'product_variants', 'products',
     'categories', 'user_addresses', 'users',
