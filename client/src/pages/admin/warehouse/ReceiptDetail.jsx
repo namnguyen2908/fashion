@@ -70,7 +70,8 @@ export default function ReceiptDetail() {
             </p>
           </div>
           <div className="text-right text-sm">
-            <p className="text-neutral-600">Nhà cung cấp: <span className="font-medium">{receipt.supplier || "—"}</span></p>
+            <p className="text-neutral-600">Kho: <span className="font-medium">{receipt.warehouse_name || "—"}</span></p>
+            <p className="text-neutral-600 mt-1">Nhà cung cấp: <span className="font-medium">{receipt.supplier_name || "—"}</span></p>
             <p className="text-neutral-600 mt-1">Số mặt hàng: <span className="font-medium">{receipt.items?.length || 0}</span></p>
             <p className="text-neutral-600 mt-1">Tổng số lượng: <span className="font-medium">{totalQty}</span></p>
             {totalCost > 0 && (
