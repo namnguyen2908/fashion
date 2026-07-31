@@ -1,9 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useParams, Link } from "react-router-dom";
 import api from "../../../services/api";
 import { IconSpinner, IconSearch, IconChevron } from "../../../components/admin/Icons";
 
 export default function StockList() {
+  const { warehouseId } = useParams();
   const [products, setProducts] = useState([]);
+  const [warehouse, setWarehouse] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [expandedId, setExpandedId] = useState(null);
@@ -17,6 +20,23 @@ export default function StockList() {
   const [lowStock, setLowStock] = useState(false);
   const [threshold, setThreshold] = useState(5);
   const debounceRef = useRef(null);
+
+  useEffect(() => {
+    api.get("/warehouse/warehouses")
+      .then(({ data }) => {
+        const list = Array.isArray(data?.data) ? data.data : [];
+        setWarehouse(list.find((w) => String(w.id) === String(warehouseId)) || null);
+      })
+      .catch(() => {});
+  }, [warehouseId]);
+
+  useEffect(() => {
+    setPage(1);
+    setSearch("");
+    setSearchInput("");
+    setExpandedId(null);
+    setVariantStock({});
+  }, [warehouseId]);
 
   const fetchProducts = useCallback(async () => {
     setLoading(true);
@@ -49,7 +69,9 @@ export default function StockList() {
     if (!variantStock[productId]) {
       setLoadingVariants((prev) => ({ ...prev, [productId]: true }));
       try {
-        const { data } = await api.get(`/warehouse/stocks/product/${productId}`);
+        const { data } = await api.get(`/warehouse/stocks/product/${productId}`, {
+          params: { warehouse_id: warehouseId }
+        });
         const stockMap = {};
         (data?.data ?? []).forEach((v) => {
           stockMap[v.variant_id] = v.stock_qty;
@@ -71,22 +93,27 @@ export default function StockList() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10 w-full">
+      <Link to="/admin/warehouse/stocks"
+        className="inline-block mb-4 text-sm text-neutral-500 hover:text-neutral-900 transition-colors">
+        ← Tất cả kho
+      </Link>
+
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-xl sm:text-2xl font-medium tracking-tight">Tồn kho</h1>
+          <h1 className="text-xl sm:text-2xl font-medium tracking-tight">
+            {warehouse?.name || "Tồn kho"}
+          </h1>
           <p className="mt-1 text-sm text-neutral-500">
             {total > 0 ? `${total} sản phẩm` : "Danh sách tồn kho"}
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <label className="flex items-center gap-2 text-sm text-neutral-600 cursor-pointer">
-            <input type="checkbox" checked={lowStock}
-              onChange={() => { setLowStock(!lowStock); setPage(1); }}
-              className="rounded border-neutral-300 text-black focus:ring-black"
-            />
-            Tồn thấp (&lt;{threshold})
-          </label>
-        </div>
+        <label className="flex items-center gap-2 text-sm text-neutral-600 cursor-pointer">
+          <input type="checkbox" checked={lowStock}
+            onChange={() => { setLowStock(!lowStock); setPage(1); }}
+            className="rounded border-neutral-300 text-black focus:ring-black"
+          />
+          Tồn thấp (&lt;{threshold})
+        </label>
       </div>
 
       <div className="mb-6">

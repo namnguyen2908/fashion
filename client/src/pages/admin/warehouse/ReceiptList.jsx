@@ -79,6 +79,7 @@ export default function ReceiptList() {
                 <thead>
                   <tr className="bg-neutral-50 text-left text-xs uppercase tracking-wider text-neutral-500">
                     <th className="px-4 py-3 font-medium">Mã phiếu</th>
+                    <th className="px-4 py-3 font-medium hidden sm:table-cell">Kho</th>
                     <th className="px-4 py-3 font-medium hidden sm:table-cell">Nhà cung cấp</th>
                     <th className="px-4 py-3 font-medium hidden md:table-cell">Người tạo</th>
                     <th className="px-4 py-3 font-medium hidden md:table-cell">Ngày nhập</th>
@@ -92,7 +93,8 @@ export default function ReceiptList() {
                         <span className="font-mono text-xs font-medium text-neutral-900">{r.receipt_code}</span>
                         {r.notes && <p className="text-xs text-neutral-500 mt-0.5 truncate max-w-[200px]">{r.notes}</p>}
                       </td>
-                      <td className="px-4 py-3 text-neutral-600 hidden sm:table-cell">{r.supplier || "—"}</td>
+                      <td className="px-4 py-3 text-neutral-600 hidden sm:table-cell">{r.warehouse_name || "—"}</td>
+                      <td className="px-4 py-3 text-neutral-600 hidden sm:table-cell">{r.supplier_name || "—"}</td>
                       <td className="px-4 py-3 text-neutral-600 hidden md:table-cell">{r.created_by_name || "—"}</td>
                       <td className="px-4 py-3 text-neutral-500 text-xs hidden md:table-cell whitespace-nowrap">
                         {formatDate(r.receipt_date)}

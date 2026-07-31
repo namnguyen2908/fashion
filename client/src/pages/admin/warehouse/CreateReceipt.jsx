@@ -59,7 +59,9 @@ function SupplierCompareModal({ variantId, onClose, onSelect }) {
 export default function CreateReceipt() {
   const navigate = useNavigate();
   const [suppliers, setSuppliers] = useState([]);
+  const [warehouses, setWarehouses] = useState([]);
   const [supplierId, setSupplierId] = useState("");
+  const [warehouseId, setWarehouseId] = useState("");
   const [notes, setNotes] = useState("");
   const [products, setProducts] = useState([]);
   const [searchText, setSearchText] = useState("");
@@ -72,6 +74,12 @@ export default function CreateReceipt() {
   useEffect(() => {
     api.get("/warehouse/suppliers", { params: { active: "true" } })
       .then(({ data }) => setSuppliers(Array.isArray(data?.data) ? data.data : []))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    api.get("/warehouse/warehouses", { params: { active: "true" } })
+      .then(({ data }) => setWarehouses(Array.isArray(data?.data) ? data.data : []))
       .catch(() => {});
   }, []);
 
@@ -158,10 +166,15 @@ export default function CreateReceipt() {
       setError("Vui lòng chọn ít nhất một sản phẩm và nhập số lượng.");
       return;
     }
+    if (!warehouseId) {
+      setError("Vui lòng chọn kho nhận.");
+      return;
+    }
 
     setSubmitting(true);
     try {
       await api.post("/warehouse/receipts", {
+        warehouse_id: Number(warehouseId),
         supplier_id: supplierId ? Number(supplierId) : null,
         notes: notes.trim() || null,
         items
@@ -195,6 +208,16 @@ export default function CreateReceipt() {
         <div className="bg-white border border-neutral-200 rounded-lg p-6 space-y-4">
           <h2 className="text-sm font-medium text-neutral-900 uppercase tracking-wider">Thông tin chung</h2>
           <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex-1">
+              <label className="block text-sm text-neutral-600 mb-1">Kho nhận *</label>
+              <select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}
+                className="w-full border border-neutral-200 rounded-md px-4 py-2 text-sm outline-none focus:border-neutral-400 transition-colors bg-white">
+                <option value="">-- Chọn kho --</option>
+                {warehouses.map((w) => (
+                  <option key={w.id} value={w.id}>{w.name}</option>
+                ))}
+              </select>
+            </div>
             <div className="flex-1">
               <label className="block text-sm text-neutral-600 mb-1">Nhà cung cấp</label>
               <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)}
