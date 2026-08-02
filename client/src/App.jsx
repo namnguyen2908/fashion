@@ -33,8 +33,14 @@ import SupplierList from './pages/admin/warehouse/SupplierList';
 import SupplierDetail from './pages/admin/warehouse/SupplierDetail';
 import WarehouseList from './pages/admin/warehouse/WarehouseList';
 import TransactionList from './pages/admin/warehouse/TransactionList';
-import AdjustmentCreate from './pages/admin/warehouse/AdjustmentCreate';
-import TransferCreate from './pages/admin/warehouse/TransferCreate';
+import AdjustmentList from './pages/admin/warehouse/AdjustmentList';
+import StockCountList from './pages/admin/warehouse/StockCountList';
+import StockCountDetail from './pages/admin/warehouse/StockCountDetail';
+import TransferList from './pages/admin/warehouse/TransferList';
+import CostList from './pages/admin/warehouse/CostList';
+import PurchaseOrderList from './pages/admin/warehouse/PurchaseOrderList';
+import PurchaseOrderCreate from './pages/admin/warehouse/PurchaseOrderCreate';
+import PurchaseOrderDetail from './pages/admin/warehouse/PurchaseOrderDetail';
 import SaleDashboard from './pages/admin/sale/SaleDashboard';
 import SaleDetail from './pages/admin/sale/SaleDetail';
 
@@ -77,9 +83,16 @@ function App() {
             <Route path="warehouse/receipts" element={<ReceiptList />} />
             <Route path="warehouse/receipts/create" element={<CreateReceipt />} />
             <Route path="warehouse/receipts/:id" element={<ReceiptDetail />} />
+            <Route path="warehouse/purchase-orders" element={<PurchaseOrderList />} />
+            <Route path="warehouse/purchase-orders/create" element={<PurchaseOrderCreate />} />
+            <Route path="warehouse/purchase-orders/:id/edit" element={<PurchaseOrderCreate />} />
+            <Route path="warehouse/purchase-orders/:id" element={<PurchaseOrderDetail />} />
             <Route path="warehouse/transactions" element={<TransactionList />} />
-            <Route path="warehouse/adjustments" element={<AdjustmentCreate />} />
-            <Route path="warehouse/transfers" element={<TransferCreate />} />
+            <Route path="warehouse/adjustments" element={<AdjustmentList />} />
+            <Route path="warehouse/counts" element={<StockCountList />} />
+            <Route path="warehouse/counts/:id" element={<StockCountDetail />} />
+            <Route path="warehouse/transfers" element={<TransferList />} />
+            <Route path="warehouse/costs" element={<CostList />} />
             <Route path="warehouse/suppliers" element={<SupplierList />} />
             <Route path="warehouse/suppliers/:id" element={<SupplierDetail />} />
             <Route path="sales" element={<SaleDashboard />} />

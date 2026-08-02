@@ -3,6 +3,12 @@ import { Link } from "react-router-dom";
 import api from "../../../services/api";
 import { IconSpinner, IconEye } from "../../../components/admin/Icons";
 
+const STATUS = {
+  DRAFT: { label: "Nháp", cls: "text-amber-600 bg-amber-50" },
+  COMPLETED: { label: "Đã ghi sổ", cls: "text-green-600 bg-green-50" },
+  CANCELLED: { label: "Đã hủy", cls: "text-red-600 bg-red-50" },
+};
+
 const formatDate = (value) => {
   if (!value) return "—";
   return new Intl.DateTimeFormat("vi-VN", {
@@ -23,7 +29,7 @@ export default function ReceiptList() {
     setLoading(true);
     setError("");
     try {
-      const { data } = await api.get("/warehouse/receipts", { params: { page, limit: 20 } });
+      const { data } = await api.get("/goods-receipts", { params: { page, limit: 20 } });
       setReceipts(data?.data ?? []);
       setTotalPages(data?.totalPages ?? 1);
       setTotal(data?.total ?? 0);
@@ -79,10 +85,11 @@ export default function ReceiptList() {
                 <thead>
                   <tr className="bg-neutral-50 text-left text-xs uppercase tracking-wider text-neutral-500">
                     <th className="px-4 py-3 font-medium">Mã phiếu</th>
-                    <th className="px-4 py-3 font-medium hidden sm:table-cell">Kho</th>
-                    <th className="px-4 py-3 font-medium hidden sm:table-cell">Nhà cung cấp</th>
-                    <th className="px-4 py-3 font-medium hidden md:table-cell">Người tạo</th>
-                    <th className="px-4 py-3 font-medium hidden md:table-cell">Ngày nhập</th>
+                    <th className="px-4 py-3 font-medium">Trạng thái</th>
+                    <th className="px-4 py-3 font-medium hidden sm:table-cell">Mã PO</th>
+                    <th className="px-4 py-3 font-medium hidden md:table-cell">Kho</th>
+                    <th className="px-4 py-3 font-medium hidden lg:table-cell">Nhà cung cấp</th>
+                    <th className="px-4 py-3 font-medium hidden lg:table-cell">Ngày nhập</th>
                     <th className="px-4 py-3 font-medium text-right">Thao tác</th>
                   </tr>
                 </thead>
@@ -93,10 +100,15 @@ export default function ReceiptList() {
                         <span className="font-mono text-xs font-medium text-neutral-900">{r.receipt_code}</span>
                         {r.notes && <p className="text-xs text-neutral-500 mt-0.5 truncate max-w-[200px]">{r.notes}</p>}
                       </td>
-                      <td className="px-4 py-3 text-neutral-600 hidden sm:table-cell">{r.warehouse_name || "—"}</td>
-                      <td className="px-4 py-3 text-neutral-600 hidden sm:table-cell">{r.supplier_name || "—"}</td>
-                      <td className="px-4 py-3 text-neutral-600 hidden md:table-cell">{r.created_by_name || "—"}</td>
-                      <td className="px-4 py-3 text-neutral-500 text-xs hidden md:table-cell whitespace-nowrap">
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${STATUS[r.status]?.cls || ""}`}>
+                          {STATUS[r.status]?.label || r.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-neutral-500 font-mono text-xs hidden sm:table-cell">{r.po_code || "—"}</td>
+                      <td className="px-4 py-3 text-neutral-600 hidden md:table-cell">{r.warehouse_name}</td>
+                      <td className="px-4 py-3 text-neutral-600 hidden lg:table-cell">{r.supplier_name || "—"}</td>
+                      <td className="px-4 py-3 text-neutral-500 text-xs hidden lg:table-cell whitespace-nowrap">
                         {formatDate(r.receipt_date)}
                       </td>
                       <td className="px-4 py-3 text-right">
