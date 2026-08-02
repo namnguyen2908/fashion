@@ -1,15 +1,8 @@
 import pool from '../config/db.js';
-import { applyStockChange, transferStock } from '../utils/stock.js';
+import { applyStockChange, transferStock, nextDocCode } from '../utils/stock.js';
 
 function priceSubquery(alias = 'pv') {
     return `COALESCE((SELECT price FROM variant_prices WHERE variant_id = ${alias}.id), 0) AS price`;
-}
-
-function genCode(prefix) {
-    const now = new Date();
-    const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
-    const rand = Math.floor(Math.random() * 9000) + 1000;
-    return `${prefix}-${dateStr}-${rand}`;
 }
 
 async function ensureActiveWarehouse(clientOrPool, warehouseId) {
@@ -17,7 +10,7 @@ async function ensureActiveWarehouse(clientOrPool, warehouseId) {
         `SELECT id FROM warehouses WHERE id = $1 AND is_active = true`, [warehouseId]
     );
     if (result.rows.length === 0) {
-        throw new Error('Warehouse not found or inactive');
+        throw new Error('Kho không tồn tại hoặc ngừng hoạt động');
     }
 }
 
@@ -43,7 +36,7 @@ export const listWarehouses = async (req, res) => {
 
         const result = await pool.query(`
             SELECT w.*,
-                   COALESCE((SELECT SUM(ib.stock_qty) FROM inventory_balances ib WHERE ib.warehouse_id = w.id), 0) AS total_stock
+                   COALESCE((SELECT SUM(ib.on_hand) FROM inventory_balances ib WHERE ib.warehouse_id = w.id), 0) AS total_stock
             FROM warehouses w ${where}
             ORDER BY w.is_active DESC, w.name ASC
         `, params);
@@ -59,9 +52,9 @@ export const createWarehouse = async (req, res) => {
     try {
         const { name, code, location } = req.body;
         if (!name || !name.trim()) {
-            return res.status(400).json({ success: false, message: 'Warehouse name is required' });
+            return res.status(400).json({ success: false, message: 'Tên kho là bắt buộc' });
         }
-        const warehouseCode = code || genCode('KHO');
+        const warehouseCode = code || `KHO-${Date.now()}`;
         const result = await pool.query(`
             INSERT INTO warehouses (name, code, location)
             VALUES ($1, $2, $3)
@@ -71,7 +64,7 @@ export const createWarehouse = async (req, res) => {
         return res.status(201).json({ success: true, data: result.rows[0] });
     } catch (error) {
         if (error.code === '23505') {
-            return res.status(400).json({ success: false, message: 'Warehouse code already exists' });
+            return res.status(400).json({ success: false, message: 'Mã kho đã tồn tại' });
         }
         console.error('createWarehouse error:', error);
         return res.status(500).json({ success: false, message: 'Server error' });
@@ -85,7 +78,7 @@ export const updateWarehouse = async (req, res) => {
 
         const existing = await pool.query(`SELECT id FROM warehouses WHERE id = $1`, [id]);
         if (existing.rows.length === 0) {
-            return res.status(404).json({ success: false, message: 'Warehouse not found' });
+            return res.status(404).json({ success: false, message: 'Không tìm thấy kho' });
         }
 
         const result = await pool.query(`
@@ -101,7 +94,7 @@ export const updateWarehouse = async (req, res) => {
         return res.status(200).json({ success: true, data: result.rows[0] });
     } catch (error) {
         if (error.code === '23505') {
-            return res.status(400).json({ success: false, message: 'Warehouse code already exists' });
+            return res.status(400).json({ success: false, message: 'Mã kho đã tồn tại' });
         }
         console.error('updateWarehouse error:', error);
         return res.status(500).json({ success: false, message: 'Server error' });
@@ -144,7 +137,7 @@ export const getSupplierById = async (req, res) => {
         const { id } = req.params;
         const result = await pool.query(`SELECT * FROM suppliers WHERE id = $1`, [id]);
         if (result.rows.length === 0) {
-            return res.status(404).json({ success: false, message: 'Supplier not found' });
+            return res.status(404).json({ success: false, message: 'Không tìm thấy nhà cung cấp' });
         }
         return res.status(200).json({ success: true, data: result.rows[0] });
     } catch (error) {
@@ -157,9 +150,9 @@ export const createSupplier = async (req, res) => {
     try {
         const { name, code, contact_name, phone, email, address } = req.body;
         if (!name || !name.trim()) {
-            return res.status(400).json({ success: false, message: 'Supplier name is required' });
+            return res.status(400).json({ success: false, message: 'Tên nhà cung cấp là bắt buộc' });
         }
-        const supplierCode = code || genCode('NCC');
+        const supplierCode = code || `NCC-${Date.now()}`;
         const result = await pool.query(`
             INSERT INTO suppliers (name, code, contact_name, phone, email, address)
             VALUES ($1, $2, $3, $4, $5, $6)
@@ -169,7 +162,7 @@ export const createSupplier = async (req, res) => {
         return res.status(201).json({ success: true, data: result.rows[0] });
     } catch (error) {
         if (error.code === '23505') {
-            return res.status(400).json({ success: false, message: 'Supplier code already exists' });
+            return res.status(400).json({ success: false, message: 'Mã nhà cung cấp đã tồn tại' });
         }
         console.error('createSupplier error:', error);
         return res.status(500).json({ success: false, message: 'Server error' });
@@ -183,7 +176,7 @@ export const updateSupplier = async (req, res) => {
 
         const existing = await pool.query(`SELECT id FROM suppliers WHERE id = $1`, [id]);
         if (existing.rows.length === 0) {
-            return res.status(404).json({ success: false, message: 'Supplier not found' });
+            return res.status(404).json({ success: false, message: 'Không tìm thấy nhà cung cấp' });
         }
 
         const result = await pool.query(`
@@ -202,7 +195,7 @@ export const updateSupplier = async (req, res) => {
         return res.status(200).json({ success: true, data: result.rows[0] });
     } catch (error) {
         if (error.code === '23505') {
-            return res.status(400).json({ success: false, message: 'Supplier code already exists' });
+            return res.status(400).json({ success: false, message: 'Mã nhà cung cấp đã tồn tại' });
         }
         console.error('updateSupplier error:', error);
         return res.status(500).json({ success: false, message: 'Server error' });
@@ -228,15 +221,13 @@ export const getAllStocks = async (req, res) => {
             params.push(`%${search}%`);
             paramIndex++;
         }
-
         if (warehouse_id) {
             warehouseJoin = ` AND ib.warehouse_id = $${paramIndex}`;
             params.push(Number(warehouse_id));
             paramIndex++;
         }
-
         if (low_stock === 'true') {
-            having = `HAVING COALESCE(SUM(ib.stock_qty), 0) < $${paramIndex}`;
+            having = `HAVING COALESCE(SUM(ib.on_hand), 0) < $${paramIndex}`;
             params.push(Number(threshold));
             paramIndex++;
         }
@@ -256,12 +247,15 @@ export const getAllStocks = async (req, res) => {
         const result = await pool.query(`
             SELECT pv.id AS variant_id, pv.sku, pv.color, pv.size, ${priceSubquery()},
                    p.id AS product_id, p.name AS product_name, p.slug AS product_slug,
-                   COALESCE(SUM(ib.stock_qty), 0) AS stock_qty,
+                   COALESCE(SUM(ib.on_hand), 0) AS on_hand,
+                   COALESCE(SUM(ib.reserved), 0) AS reserved,
+                   COALESCE(SUM(ib.on_hand), 0) - COALESCE(SUM(ib.reserved), 0) AS available,
+                   COALESCE(SUM(ib.on_hand), 0) AS stock_qty,
                    MAX(ib.updated_at) AS stock_updated_at
             ${fromClause}
             GROUP BY pv.id, pv.sku, pv.color, pv.size, p.id, p.name, p.slug
             ${having}
-            ORDER BY stock_qty ASC, p.name ASC
+            ORDER BY on_hand ASC, p.name ASC
             LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
         `, [...params, Number(limit), offset]);
 
@@ -293,37 +287,50 @@ export const getVariantStock = async (req, res) => {
             [variantId]
         );
         if (variant.rows.length === 0) {
-            return res.status(404).json({ success: false, message: 'Variant not found' });
+            return res.status(404).json({ success: false, message: 'Không tìm thấy biến thể' });
         }
 
         if (warehouse_id) {
             const balance = await pool.query(
-                `SELECT COALESCE(stock_qty, 0) AS stock_qty, updated_at
+                `SELECT COALESCE(on_hand, 0) AS on_hand, COALESCE(reserved, 0) AS reserved, updated_at
                  FROM inventory_balances WHERE warehouse_id = $1 AND variant_id = $2`,
                 [Number(warehouse_id), variantId]
             );
-            const data = {
-                ...variant.rows[0],
-                warehouse_id: Number(warehouse_id),
-                stock_qty: balance.rows.length > 0 ? Number(balance.rows[0].stock_qty) : 0,
-                updated_at: balance.rows.length > 0 ? balance.rows[0].updated_at : null
-            };
-            return res.status(200).json({ success: true, data });
+            const onHand = balance.rows.length > 0 ? Number(balance.rows[0].on_hand) : 0;
+            const reserved = balance.rows.length > 0 ? Number(balance.rows[0].reserved) : 0;
+            return res.status(200).json({
+                success: true,
+                data: {
+                    ...variant.rows[0],
+                    warehouse_id: Number(warehouse_id),
+                    on_hand: onHand,
+                    reserved,
+                    available: onHand - reserved,
+                    stock_qty: onHand,
+                    updated_at: balance.rows.length > 0 ? balance.rows[0].updated_at : null
+                }
+            });
         }
 
         const balances = await pool.query(`
-            SELECT ib.warehouse_id, w.name AS warehouse_name, ib.stock_qty, ib.updated_at
+            SELECT ib.warehouse_id, w.name AS warehouse_name, ib.on_hand, ib.reserved, ib.updated_at
             FROM inventory_balances ib
             JOIN warehouses w ON ib.warehouse_id = w.id
             WHERE ib.variant_id = $1
-            ORDER BY ib.stock_qty DESC
+            ORDER BY ib.on_hand DESC
         `, [variantId]);
+
+        const onHand = balances.rows.reduce((s, b) => s + Number(b.on_hand), 0);
+        const reserved = balances.rows.reduce((s, b) => s + Number(b.reserved), 0);
 
         return res.status(200).json({
             success: true,
             data: {
                 ...variant.rows[0],
-                stock_qty: balances.rows.reduce((s, b) => s + Number(b.stock_qty), 0),
+                on_hand: onHand,
+                reserved,
+                available: onHand - reserved,
+                stock_qty: onHand,
                 balances: balances.rows,
                 updated_at: balances.rows.length > 0 ? balances.rows[0].updated_at : null
             }
@@ -343,7 +350,8 @@ export const getProductStocks = async (req, res) => {
 
         const result = await pool.query(`
             SELECT pv.id AS variant_id, pv.sku, pv.color, pv.size, ${priceSubquery()},
-                   COALESCE(SUM(ib.stock_qty), 0) AS stock_qty
+                   COALESCE(SUM(ib.on_hand), 0) AS on_hand,
+                   COALESCE(SUM(ib.on_hand), 0) AS stock_qty
             FROM product_variants pv
             LEFT JOIN inventory_balances ib ON pv.id = ib.variant_id${warehouseJoin}
             WHERE pv.product_id = $1 AND pv.is_active = true
@@ -359,167 +367,7 @@ export const getProductStocks = async (req, res) => {
 };
 
 // =========================================
-// GOODS RECEIPTS
-// =========================================
-export const createStockReceipt = async (req, res) => {
-    try {
-        const { supplier_id, warehouse_id, notes, items } = req.body;
-
-        if (!warehouse_id) {
-            return res.status(400).json({ success: false, message: 'Warehouse is required' });
-        }
-        if (!items || !Array.isArray(items) || items.length === 0) {
-            return res.status(400).json({ success: false, message: 'Items are required' });
-        }
-        for (const item of items) {
-            if (!item.variant_id || !item.quantity || item.quantity <= 0) {
-                return res.status(400).json({ success: false, message: 'Invalid item data' });
-            }
-        }
-
-        try {
-            await ensureActiveWarehouse(pool, warehouse_id);
-        } catch (err) {
-            return res.status(400).json({ success: false, message: err.message });
-        }
-
-        if (supplier_id) {
-            const supplier = await pool.query(`SELECT id FROM suppliers WHERE id = $1 AND is_active = true`, [supplier_id]);
-            if (supplier.rows.length === 0) {
-                return res.status(400).json({ success: false, message: 'Supplier not found or inactive' });
-            }
-        }
-
-        const receiptCode = genCode('PN');
-        const client = await pool.connect();
-
-        try {
-            await client.query('BEGIN');
-
-            const receiptResult = await client.query(`
-                INSERT INTO goods_receipts (receipt_code, supplier_id, warehouse_id, created_by, notes)
-                VALUES ($1, $2, $3, $4, $5)
-                RETURNING id, receipt_code, receipt_date, supplier_id, warehouse_id, created_by, notes, created_at
-            `, [receiptCode, supplier_id || null, warehouse_id, req.user.userId, notes || null]);
-
-            const receiptId = receiptResult.rows[0].id;
-
-            for (const item of items) {
-                const itemResult = await client.query(`
-                    INSERT INTO goods_receipt_items (goods_receipt_id, variant_id, quantity, unit_cost)
-                    VALUES ($1, $2, $3, $4)
-                    RETURNING id
-                `, [receiptId, item.variant_id, item.quantity, item.unit_cost || null]);
-
-                await applyStockChange(client, {
-                    warehouseId: warehouse_id,
-                    variantId: item.variant_id,
-                    qtyChange: item.quantity,
-                    refType: 'GOODS_RECEIPT',
-                    refId: itemResult.rows[0].id,
-                    unitCost: item.unit_cost || null,
-                    createdBy: req.user.userId,
-                    note: receiptCode,
-                });
-            }
-
-            await client.query('COMMIT');
-
-            return res.status(201).json({
-                success: true,
-                message: 'Stock receipt created successfully',
-                data: receiptResult.rows[0]
-            });
-        } catch (error) {
-            await client.query('ROLLBACK');
-            throw error;
-        } finally {
-            client.release();
-        }
-    } catch (error) {
-        console.error('createStockReceipt error:', error);
-        return res.status(500).json({ success: false, message: 'Server error' });
-    }
-};
-
-export const listStockReceipts = async (req, res) => {
-    try {
-        const { page = 1, limit = 20 } = req.query;
-        const offset = (Math.max(Number(page), 1) - 1) * Number(limit);
-
-        const countResult = await pool.query(
-            `SELECT COUNT(*) as total FROM goods_receipts`
-        );
-
-        const result = await pool.query(`
-            SELECT gr.id, gr.receipt_code, gr.receipt_date, gr.supplier_id, gr.warehouse_id, gr.notes, gr.created_at,
-                   u.name AS created_by_name,
-                   s.name AS supplier_name,
-                   w.name AS warehouse_name
-            FROM goods_receipts gr
-            LEFT JOIN users u ON gr.created_by = u.id
-            LEFT JOIN suppliers s ON gr.supplier_id = s.id
-            LEFT JOIN warehouses w ON gr.warehouse_id = w.id
-            ORDER BY gr.created_at DESC
-            LIMIT $1 OFFSET $2
-        `, [Number(limit), offset]);
-
-        return res.status(200).json({
-            success: true,
-            data: result.rows,
-            total: Number(countResult.rows[0].total),
-            totalPages: Math.ceil(Number(countResult.rows[0].total) / Number(limit)),
-            currentPage: Number(page),
-            limit: Number(limit)
-        });
-    } catch (error) {
-        console.error('listStockReceipts error:', error);
-        return res.status(500).json({ success: false, message: 'Server error' });
-    }
-};
-
-export const getStockReceiptById = async (req, res) => {
-    try {
-        const { id } = req.params;
-
-        const receipt = await pool.query(`
-            SELECT gr.*, u.name AS created_by_name,
-                   s.name AS supplier_name, s.code AS supplier_code,
-                   w.name AS warehouse_name
-            FROM goods_receipts gr
-            LEFT JOIN users u ON gr.created_by = u.id
-            LEFT JOIN suppliers s ON gr.supplier_id = s.id
-            LEFT JOIN warehouses w ON gr.warehouse_id = w.id
-            WHERE gr.id = $1
-        `, [id]);
-
-        if (receipt.rows.length === 0) {
-            return res.status(404).json({ success: false, message: 'Stock receipt not found' });
-        }
-
-        const details = await pool.query(`
-            SELECT gri.id, gri.variant_id, gri.quantity, gri.unit_cost, gri.created_at,
-                   pv.sku, pv.color, pv.size, ${priceSubquery()},
-                   p.name AS product_name, p.id AS product_id
-            FROM goods_receipt_items gri
-            JOIN product_variants pv ON gri.variant_id = pv.id
-            JOIN products p ON pv.product_id = p.id
-            WHERE gri.goods_receipt_id = $1
-            ORDER BY p.name, pv.color, pv.size
-        `, [id]);
-
-        return res.status(200).json({
-            success: true,
-            data: { ...receipt.rows[0], items: details.rows }
-        });
-    } catch (error) {
-        console.error('getStockReceiptById error:', error);
-        return res.status(500).json({ success: false, message: 'Server error' });
-    }
-};
-
-// =========================================
-// INVENTORY TRANSACTIONS
+// INVENTORY TRANSACTIONS (sổ cái)
 // =========================================
 export const listTransactions = async (req, res) => {
     try {
@@ -560,7 +408,9 @@ export const listTransactions = async (req, res) => {
         `, params);
 
         const result = await pool.query(`
-            SELECT it.id, it.qty_change, it.balance_after, it.ref_type, it.ref_id, it.unit_cost, it.note, it.created_at,
+            SELECT it.id, it.qty_change, it.qty_before, it.qty_after, it.ref_type, it.ref_id,
+                   it.unit_cost, it.note, it.created_at,
+                   it.qty_after AS balance_after,
                    it.variant_id, pv.sku, pv.color, pv.size, ${priceSubquery()},
                    p.id AS product_id, p.name AS product_name,
                    w.id AS warehouse_id, w.name AS warehouse_name,
@@ -590,66 +440,92 @@ export const listTransactions = async (req, res) => {
 };
 
 // =========================================
-// ADJUSTMENTS
+// INVENTORY COSTS (giá vốn)
+// =========================================
+export const listCosts = async (req, res) => {
+    try {
+        const { search } = req.query;
+        let where = 'WHERE 1 = 1';
+        const params = [];
+        let idx = 1;
+        if (search) {
+            where += ` AND (p.name ILIKE $${idx} OR pv.sku ILIKE $${idx})`;
+            params.push(`%${search}%`);
+            idx++;
+        }
+
+        const result = await pool.query(`
+            SELECT ic.variant_id, ic.current_cost, ic.updated_at,
+                   pv.sku, pv.color, pv.size,
+                   p.id AS product_id, p.name AS product_name
+            FROM inventory_costs ic
+            JOIN product_variants pv ON ic.variant_id = pv.id
+            JOIN products p ON pv.product_id = p.id
+            ${where}
+            ORDER BY p.name, pv.color, pv.size
+        `, params);
+
+        return res.status(200).json({ success: true, data: result.rows });
+    } catch (error) {
+        console.error('listCosts error:', error);
+        return res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+// =========================================
+// STOCK ADJUSTMENTS
 // =========================================
 export const createAdjustment = async (req, res) => {
     try {
-        const { warehouse_id, items, note } = req.body;
+        const { warehouse_id, reason, items } = req.body;
 
         if (!warehouse_id) {
-            return res.status(400).json({ success: false, message: 'Warehouse is required' });
+            return res.status(400).json({ success: false, message: 'Kho là bắt buộc' });
+        }
+        if (!reason || !reason.trim()) {
+            return res.status(400).json({ success: false, message: 'Lý do điều chỉnh là bắt buộc' });
         }
         if (!items || !Array.isArray(items) || items.length === 0) {
-            return res.status(400).json({ success: false, message: 'Items are required' });
+            return res.status(400).json({ success: false, message: 'Cần ít nhất một sản phẩm' });
         }
         for (const item of items) {
-            if (!item.variant_id || !item.quantity || item.quantity === 0) {
-                return res.status(400).json({ success: false, message: 'Invalid item data' });
+            if (!item.variant_id || !item.quantity || Number(item.quantity) === 0) {
+                return res.status(400).json({ success: false, message: 'Dữ liệu sản phẩm không hợp lệ' });
             }
         }
 
         try {
             await ensureActiveWarehouse(pool, warehouse_id);
-        } catch (err) {
-            return res.status(400).json({ success: false, message: err.message });
+        } catch (e) {
+            return res.status(400).json({ success: false, message: e.message });
         }
 
-        const adjCode = genCode('DCNH');
         const client = await pool.connect();
-
         try {
             await client.query('BEGIN');
+            const code = await nextDocCode(client, 'DCNH');
+            const adj = await client.query(`
+                INSERT INTO stock_adjustments (adjustment_code, warehouse_id, reason, source, status, created_by)
+                VALUES ($1, $2, $3, 'MANUAL', 'DRAFT', $4)
+                RETURNING *
+            `, [code, warehouse_id, reason.trim(), req.user.userId]);
 
             for (const item of items) {
-                await applyStockChange(client, {
-                    warehouseId: warehouse_id,
-                    variantId: item.variant_id,
-                    qtyChange: item.quantity,
-                    refType: 'ADJUSTMENT',
-                    refId: null,
-                    unitCost: null,
-                    createdBy: req.user.userId,
-                    note: `${adjCode}${note ? ` - ${note}` : ''}`,
-                });
+                await client.query(`
+                    INSERT INTO stock_adjustment_items (adjustment_id, variant_id, quantity, note)
+                    VALUES ($1, $2, $3, $4)
+                `, [adj.rows[0].id, item.variant_id, Number(item.quantity), item.note || null]);
             }
 
             await client.query('COMMIT');
-
-            return res.status(201).json({
-                success: true,
-                message: 'Adjustment created successfully',
-                data: { adjustment_code: adjCode }
-            });
-        } catch (error) {
+            return res.status(201).json({ success: true, data: { ...adj.rows[0], items } });
+        } catch (e) {
             await client.query('ROLLBACK');
-            throw error;
+            throw e;
         } finally {
             client.release();
         }
     } catch (error) {
-        if (error.message === 'INSUFFICIENT_STOCK') {
-            return res.status(400).json({ success: false, message: 'Insufficient stock for adjustment' });
-        }
         console.error('createAdjustment error:', error);
         return res.status(500).json({ success: false, message: 'Server error' });
     }
@@ -660,23 +536,18 @@ export const listAdjustments = async (req, res) => {
         const { page = 1, limit = 20 } = req.query;
         const offset = (Math.max(Number(page), 1) - 1) * Number(limit);
 
-        const countResult = await pool.query(
-            `SELECT COUNT(*) as total FROM inventory_transactions WHERE ref_type = 'ADJUSTMENT'`
-        );
+        const countResult = await pool.query(`SELECT COUNT(*) as total FROM stock_adjustments`);
 
         const result = await pool.query(`
-            SELECT it.id, it.qty_change, it.balance_after, it.note, it.created_at,
-                   it.variant_id, pv.sku, pv.color, pv.size, ${priceSubquery()},
-                   p.name AS product_name,
+            SELECT sa.id, sa.adjustment_code, sa.warehouse_id, sa.reason, sa.source, sa.status,
+                   sa.created_at, sa.completed_at,
                    w.name AS warehouse_name,
-                   u.name AS created_by_name
-            FROM inventory_transactions it
-            JOIN product_variants pv ON it.variant_id = pv.id
-            JOIN products p ON pv.product_id = p.id
-            JOIN warehouses w ON it.warehouse_id = w.id
-            LEFT JOIN users u ON it.created_by = u.id
-            WHERE it.ref_type = 'ADJUSTMENT'
-            ORDER BY it.created_at DESC, it.id DESC
+                   u.name AS created_by_name,
+                   (SELECT COUNT(*) FROM stock_adjustment_items sai WHERE sai.adjustment_id = sa.id)::int AS item_count
+            FROM stock_adjustments sa
+            JOIN warehouses w ON sa.warehouse_id = w.id
+            LEFT JOIN users u ON sa.created_by = u.id
+            ORDER BY sa.created_at DESC
             LIMIT $1 OFFSET $2
         `, [Number(limit), offset]);
 
@@ -694,70 +565,472 @@ export const listAdjustments = async (req, res) => {
     }
 };
 
+export const getAdjustmentById = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const adj = await pool.query(`
+            SELECT sa.*, w.name AS warehouse_name, u.name AS created_by_name
+            FROM stock_adjustments sa
+            JOIN warehouses w ON sa.warehouse_id = w.id
+            LEFT JOIN users u ON sa.created_by = u.id
+            WHERE sa.id = $1
+        `, [id]);
+        if (adj.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Không tìm thấy phiếu điều chỉnh' });
+        }
+
+        const items = await pool.query(`
+            SELECT sai.id, sai.variant_id, sai.quantity, sai.note,
+                   pv.sku, pv.color, pv.size, p.name AS product_name, p.id AS product_id
+            FROM stock_adjustment_items sai
+            JOIN product_variants pv ON sai.variant_id = pv.id
+            JOIN products p ON pv.product_id = p.id
+            WHERE sai.adjustment_id = $1
+            ORDER BY p.name, pv.color, pv.size
+        `, [id]);
+
+        return res.status(200).json({ success: true, data: { ...adj.rows[0], items: items.rows } });
+    } catch (error) {
+        console.error('getAdjustmentById error:', error);
+        return res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+export const updateAdjustment = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { reason, items } = req.body;
+
+        const existing = await pool.query(`SELECT id, status FROM stock_adjustments WHERE id = $1`, [id]);
+        if (existing.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Không tìm thấy phiếu điều chỉnh' });
+        }
+        if (existing.rows[0].status !== 'DRAFT') {
+            return res.status(400).json({ success: false, message: 'Chỉ sửa được phiếu ở trạng thái DRAFT' });
+        }
+        if (reason != null && !String(reason).trim()) {
+            return res.status(400).json({ success: false, message: 'Lý do điều chỉnh là bắt buộc' });
+        }
+
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            if (reason != null) {
+                await client.query(`UPDATE stock_adjustments SET reason = $1 WHERE id = $2`, [String(reason).trim(), id]);
+            }
+            if (items && Array.isArray(items)) {
+                await client.query(`DELETE FROM stock_adjustment_items WHERE adjustment_id = $1`, [id]);
+                for (const item of items) {
+                    if (!item.variant_id || !item.quantity || Number(item.quantity) === 0) {
+                        throw new Error('Dữ liệu sản phẩm không hợp lệ');
+                    }
+                    await client.query(`
+                        INSERT INTO stock_adjustment_items (adjustment_id, variant_id, quantity, note)
+                        VALUES ($1, $2, $3, $4)
+                    `, [id, item.variant_id, Number(item.quantity), item.note || null]);
+                }
+            }
+            await client.query('COMMIT');
+            return res.status(200).json({ success: true, message: 'Cập nhật thành công' });
+        } catch (e) {
+            await client.query('ROLLBACK');
+            if (e.message === 'Dữ liệu sản phẩm không hợp lệ') {
+                return res.status(400).json({ success: false, message: e.message });
+            }
+            throw e;
+        } finally {
+            client.release();
+        }
+    } catch (error) {
+        console.error('updateAdjustment error:', error);
+        return res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+export const completeAdjustment = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+
+            const result = await client.query(`
+                UPDATE stock_adjustments SET status = 'COMPLETED', completed_at = NOW()
+                WHERE id = $1 AND status = 'DRAFT'
+                RETURNING id, adjustment_code, warehouse_id
+            `, [id]);
+
+            if (result.rows.length === 0) {
+                await client.query('ROLLBACK');
+                const current = await pool.query(`SELECT status FROM stock_adjustments WHERE id = $1`, [id]);
+                if (current.rows.length > 0 && current.rows[0].status === 'COMPLETED') {
+                    return res.status(200).json({ success: true, message: 'Phiếu điều chỉnh đã ghi sổ trước đó' });
+                }
+                return res.status(400).json({ success: false, message: 'Phiếu điều chỉnh không thể ghi sổ' });
+            }
+
+            const adj = result.rows[0];
+            const items = await client.query(
+                `SELECT id, variant_id, quantity FROM stock_adjustment_items WHERE adjustment_id = $1 ORDER BY id`, [id]
+            );
+            for (const item of items.rows) {
+                await applyStockChange(client, {
+                    warehouseId: adj.warehouse_id,
+                    variantId: item.variant_id,
+                    qtyChange: item.quantity,
+                    refType: 'ADJUSTMENT',
+                    refId: adj.id,
+                    unitCost: null,
+                    createdBy: req.user.userId,
+                    note: adj.adjustment_code,
+                });
+            }
+            await client.query('COMMIT');
+            return res.status(200).json({ success: true, message: 'Đã ghi sổ phiếu điều chỉnh' });
+        } catch (e) {
+            await client.query('ROLLBACK');
+            throw e;
+        } finally {
+            client.release();
+        }
+    } catch (error) {
+        if (error.message === 'INSUFFICIENT_STOCK') {
+            return res.status(400).json({ success: false, message: 'Tồn kho không đủ để giảm' });
+        }
+        console.error('completeAdjustment error:', error);
+        return res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+// =========================================
+// STOCK COUNTS
+// =========================================
+export const createCount = async (req, res) => {
+    try {
+        const { warehouse_id, notes } = req.body;
+
+        if (!warehouse_id) {
+            return res.status(400).json({ success: false, message: 'Kho là bắt buộc' });
+        }
+        try {
+            await ensureActiveWarehouse(pool, warehouse_id);
+        } catch (e) {
+            return res.status(400).json({ success: false, message: e.message });
+        }
+
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            const code = await nextDocCode(client, 'KK');
+            const session = await client.query(`
+                INSERT INTO stock_count_sessions (count_code, warehouse_id, status, notes, created_by)
+                VALUES ($1, $2, 'DRAFT', $3, $4)
+                RETURNING *
+            `, [code, warehouse_id, notes || null, req.user.userId]);
+
+            const snapshot = await client.query(`
+                INSERT INTO stock_count_items (session_id, variant_id, system_qty)
+                SELECT $1, variant_id, on_hand FROM inventory_balances WHERE warehouse_id = $2
+                RETURNING id, variant_id, system_qty
+            `, [session.rows[0].id, warehouse_id]);
+
+            await client.query('COMMIT');
+            return res.status(201).json({
+                success: true,
+                data: { ...session.rows[0], item_count: snapshot.rows.length }
+            });
+        } catch (e) {
+            await client.query('ROLLBACK');
+            throw e;
+        } finally {
+            client.release();
+        }
+    } catch (error) {
+        console.error('createCount error:', error);
+        return res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+export const listCounts = async (req, res) => {
+    try {
+        const { page = 1, limit = 20 } = req.query;
+        const offset = (Math.max(Number(page), 1) - 1) * Number(limit);
+
+        const countResult = await pool.query(`SELECT COUNT(*) as total FROM stock_count_sessions`);
+
+        const result = await pool.query(`
+            SELECT scs.id, scs.count_code, scs.warehouse_id, scs.status, scs.adjustment_id,
+                   scs.notes, scs.created_at, scs.completed_at,
+                   w.name AS warehouse_name,
+                   u.name AS created_by_name,
+                   (SELECT COUNT(*) FROM stock_count_items sci WHERE sci.session_id = scs.id)::int AS item_count
+            FROM stock_count_sessions scs
+            JOIN warehouses w ON scs.warehouse_id = w.id
+            LEFT JOIN users u ON scs.created_by = u.id
+            ORDER BY scs.created_at DESC
+            LIMIT $1 OFFSET $2
+        `, [Number(limit), offset]);
+
+        return res.status(200).json({
+            success: true,
+            data: result.rows,
+            total: Number(countResult.rows[0].total),
+            totalPages: Math.ceil(Number(countResult.rows[0].total) / Number(limit)),
+            currentPage: Number(page),
+            limit: Number(limit)
+        });
+    } catch (error) {
+        console.error('listCounts error:', error);
+        return res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+export const getCountById = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const session = await pool.query(`
+            SELECT scs.*, w.name AS warehouse_name, u.name AS created_by_name
+            FROM stock_count_sessions scs
+            JOIN warehouses w ON scs.warehouse_id = w.id
+            LEFT JOIN users u ON scs.created_by = u.id
+            WHERE scs.id = $1
+        `, [id]);
+        if (session.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Không tìm thấy đợt kiểm kê' });
+        }
+
+        const items = await pool.query(`
+            SELECT sci.id, sci.variant_id, sci.system_qty, sci.counted_qty, sci.difference,
+                   pv.sku, pv.color, pv.size, p.name AS product_name, p.id AS product_id
+            FROM stock_count_items sci
+            JOIN product_variants pv ON sci.variant_id = pv.id
+            JOIN products p ON pv.product_id = p.id
+            WHERE sci.session_id = $1
+            ORDER BY p.name, pv.color, pv.size
+        `, [id]);
+
+        return res.status(200).json({ success: true, data: { ...session.rows[0], items: items.rows } });
+    } catch (error) {
+        console.error('getCountById error:', error);
+        return res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+export const updateCountItem = async (req, res) => {
+    try {
+        const { id, itemId } = req.params;
+        const { counted_qty } = req.body;
+
+        if (counted_qty === undefined || counted_qty === null || counted_qty < 0) {
+            return res.status(400).json({ success: false, message: 'Số đếm không hợp lệ' });
+        }
+
+        const item = await pool.query(
+            `SELECT sci.id, sci.session_id, scs.status
+             FROM stock_count_items sci
+             JOIN stock_count_sessions scs ON sci.session_id = scs.id
+             WHERE sci.session_id = $1 AND sci.id = $2`,
+            [id, itemId]
+        );
+        if (item.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Không tìm thấy dòng kiểm kê' });
+        }
+        if (!['DRAFT', 'IN_PROGRESS'].includes(item.rows[0].status)) {
+            return res.status(400).json({ success: false, message: 'Đợt kiểm kê không còn chỉnh sửa được' });
+        }
+
+        await pool.query(`UPDATE stock_count_items SET counted_qty = $1 WHERE id = $2`, [Number(counted_qty), itemId]);
+        if (item.rows[0].status === 'DRAFT') {
+            await pool.query(`UPDATE stock_count_sessions SET status = 'IN_PROGRESS' WHERE id = $1`, [id]);
+        }
+
+        return res.status(200).json({ success: true, message: 'Đã cập nhật số đếm' });
+    } catch (error) {
+        console.error('updateCountItem error:', error);
+        return res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+export const completeCount = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+
+            const result = await client.query(`
+                UPDATE stock_count_sessions SET status = 'COMPLETED'
+                WHERE id = $1 AND status IN ('DRAFT', 'IN_PROGRESS')
+                RETURNING id, count_code, warehouse_id, created_by
+            `, [id]);
+
+            if (result.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ success: false, message: 'Đợt kiểm kê không thể hoàn tất' });
+            }
+
+            const session = result.rows[0];
+
+            const items = await client.query(
+                `SELECT id, variant_id, system_qty, counted_qty FROM stock_count_items WHERE session_id = $1 ORDER BY id`,
+                [id]
+            );
+
+            const adjCode = await nextDocCode(client, 'DCNH');
+            let adjId = null;
+
+            for (const item of items.rows) {
+                const onHandNow = await client.query(
+                    `SELECT COALESCE(on_hand, 0) AS on_hand FROM inventory_balances
+                     WHERE warehouse_id = $1 AND variant_id = $2`,
+                    [session.warehouse_id, item.variant_id]
+                );
+                const current = Number(onHandNow.rows[0].on_hand);
+                const counted = item.counted_qty != null ? Number(item.counted_qty) : current;
+                const difference = counted - current;
+
+                await client.query(
+                    `UPDATE stock_count_items SET difference = $1 WHERE id = $2`,
+                    [difference, item.id]
+                );
+
+                if (difference !== 0) {
+                    if (!adjId) {
+                        const adj = await client.query(`
+                            INSERT INTO stock_adjustments
+                                (adjustment_code, warehouse_id, reason, source, status, created_by, completed_at)
+                            VALUES ($1, $2, $3, 'STOCK_COUNT', 'COMPLETED', $4, NOW())
+                            RETURNING id
+                        `, [adjCode, session.warehouse_id, `Kết quả kiểm kê ${session.count_code}`, session.created_by]);
+                        adjId = adj.rows[0].id;
+                    }
+                    await client.query(`
+                        INSERT INTO stock_adjustment_items (adjustment_id, variant_id, quantity, note)
+                        VALUES ($1, $2, $3, $4)
+                    `, [adjId, item.variant_id, difference, `Kiểm kê ${session.count_code}`]);
+                }
+            }
+
+            if (adjId) {
+                const adjItems = await client.query(
+                    `SELECT variant_id, quantity FROM stock_adjustment_items WHERE adjustment_id = $1 ORDER BY id`,
+                    [adjId]
+                );
+                for (const ai of adjItems.rows) {
+                    await applyStockChange(client, {
+                        warehouseId: session.warehouse_id,
+                        variantId: ai.variant_id,
+                        qtyChange: ai.quantity,
+                        refType: 'ADJUSTMENT',
+                        refId: adjId,
+                        unitCost: null,
+                        createdBy: session.created_by,
+                        note: adjCode,
+                    });
+                }
+                await client.query(`UPDATE stock_count_sessions SET adjustment_id = $1, completed_at = NOW() WHERE id = $2`, [adjId, id]);
+            } else {
+                await client.query(`UPDATE stock_count_sessions SET completed_at = NOW() WHERE id = $1`, [id]);
+            }
+
+            await client.query('COMMIT');
+            return res.status(200).json({
+                success: true,
+                message: 'Đã hoàn tất kiểm kê' + (adjId ? ' và sinh phiếu điều chỉnh' : ' (không có chênh lệch)'),
+                data: { adjustment_id: adjId }
+            });
+        } catch (e) {
+            await client.query('ROLLBACK');
+            throw e;
+        } finally {
+            client.release();
+        }
+    } catch (error) {
+        if (error.message === 'INSUFFICIENT_STOCK') {
+            return res.status(400).json({ success: false, message: 'Tồn kho không đủ để điều chỉnh' });
+        }
+        console.error('completeCount error:', error);
+        return res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+export const cancelCount = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const result = await pool.query(`
+            UPDATE stock_count_sessions SET status = 'CANCELLED'
+            WHERE id = $1 AND status IN ('DRAFT', 'IN_PROGRESS')
+            RETURNING id
+        `, [id]);
+        if (result.rows.length === 0) {
+            return res.status(400).json({ success: false, message: 'Đợt kiểm kê không thể hủy' });
+        }
+        return res.status(200).json({ success: true, message: 'Đã hủy đợt kiểm kê' });
+    } catch (error) {
+        console.error('cancelCount error:', error);
+        return res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
 // =========================================
 // TRANSFERS
 // =========================================
 export const createTransfer = async (req, res) => {
     try {
-        const { from_warehouse_id, to_warehouse_id, items, note } = req.body;
+        const { from_warehouse_id, to_warehouse_id, notes, items } = req.body;
 
         if (!from_warehouse_id || !to_warehouse_id) {
-            return res.status(400).json({ success: false, message: 'From and to warehouse are required' });
+            return res.status(400).json({ success: false, message: 'Kho nguồn và kho đích là bắt buộc' });
         }
         if (Number(from_warehouse_id) === Number(to_warehouse_id)) {
-            return res.status(400).json({ success: false, message: 'Cannot transfer to the same warehouse' });
+            return res.status(400).json({ success: false, message: 'Kho nguồn và kho đích phải khác nhau' });
         }
         if (!items || !Array.isArray(items) || items.length === 0) {
-            return res.status(400).json({ success: false, message: 'Items are required' });
+            return res.status(400).json({ success: false, message: 'Cần ít nhất một sản phẩm' });
         }
         for (const item of items) {
             if (!item.variant_id || !item.quantity || item.quantity <= 0) {
-                return res.status(400).json({ success: false, message: 'Invalid item data' });
+                return res.status(400).json({ success: false, message: 'Dữ liệu sản phẩm không hợp lệ' });
             }
         }
 
         try {
             await ensureActiveWarehouse(pool, from_warehouse_id);
             await ensureActiveWarehouse(pool, to_warehouse_id);
-        } catch (err) {
-            return res.status(400).json({ success: false, message: err.message });
+        } catch (e) {
+            return res.status(400).json({ success: false, message: e.message });
         }
 
-        const transferCode = genCode('CN');
-        const transferNote = note ? `${transferCode} - ${note}` : transferCode;
         const client = await pool.connect();
-
         try {
             await client.query('BEGIN');
+            const code = await nextDocCode(client, 'CN');
+            const tr = await client.query(`
+                INSERT INTO transfer_orders (transfer_code, from_warehouse_id, to_warehouse_id, status, notes, created_by)
+                VALUES ($1, $2, $3, 'DRAFT', $4, $5)
+                RETURNING *
+            `, [code, from_warehouse_id, to_warehouse_id, notes || null, req.user.userId]);
 
             for (const item of items) {
-                await transferStock(client, {
-                    fromWarehouseId: from_warehouse_id,
-                    toWarehouseId: to_warehouse_id,
-                    variantId: item.variant_id,
-                    quantity: item.quantity,
-                    createdBy: req.user.userId,
-                    note: transferNote,
-                });
+                await client.query(`
+                    INSERT INTO transfer_items (transfer_order_id, variant_id, quantity)
+                    VALUES ($1, $2, $3)
+                `, [tr.rows[0].id, item.variant_id, item.quantity]);
             }
 
             await client.query('COMMIT');
-
-            return res.status(201).json({
-                success: true,
-                message: 'Transfer created successfully',
-                data: { transfer_code: transferNote }
-            });
-        } catch (error) {
+            return res.status(201).json({ success: true, data: tr.rows[0] });
+        } catch (e) {
             await client.query('ROLLBACK');
-            throw error;
+            throw e;
         } finally {
             client.release();
         }
     } catch (error) {
-        if (error.message === 'INSUFFICIENT_STOCK') {
-            return res.status(400).json({ success: false, message: 'Insufficient stock for transfer' });
-        }
         console.error('createTransfer error:', error);
         return res.status(500).json({ success: false, message: 'Server error' });
     }
@@ -768,23 +1041,21 @@ export const listTransfers = async (req, res) => {
         const { page = 1, limit = 20 } = req.query;
         const offset = (Math.max(Number(page), 1) - 1) * Number(limit);
 
-        const countResult = await pool.query(`
-            SELECT COUNT(DISTINCT note) as total FROM inventory_transactions WHERE ref_type = 'TRANSFER'
-        `);
+        const countResult = await pool.query(`SELECT COUNT(*) as total FROM transfer_orders`);
 
         const result = await pool.query(`
-            SELECT t.note AS transfer_code, t.created_at, t.created_by,
+            SELECT tr.id, tr.transfer_code, tr.from_warehouse_id, tr.to_warehouse_id, tr.status,
+                   tr.notes, tr.created_at, tr.completed_at,
+                   wf.name AS from_warehouse_name,
+                   wt.name AS to_warehouse_name,
                    u.name AS created_by_name,
-                   COUNT(*) AS item_count,
-                   SUM(ABS(t.qty_change)) AS total_qty,
-                   MAX(CASE WHEN t.qty_change < 0 THEN w.name END) AS from_warehouse_name,
-                   MAX(CASE WHEN t.qty_change > 0 THEN w.name END) AS to_warehouse_name
-            FROM inventory_transactions t
-            JOIN warehouses w ON t.warehouse_id = w.id
-            LEFT JOIN users u ON t.created_by = u.id
-            WHERE t.ref_type = 'TRANSFER'
-            GROUP BY t.note, t.created_at, t.created_by, u.name
-            ORDER BY t.created_at DESC
+                   (SELECT COUNT(*) FROM transfer_items ti WHERE ti.transfer_order_id = tr.id)::int AS item_count,
+                   (SELECT COALESCE(SUM(ti.quantity), 0) FROM transfer_items ti WHERE ti.transfer_order_id = tr.id)::int AS total_qty
+            FROM transfer_orders tr
+            JOIN warehouses wf ON tr.from_warehouse_id = wf.id
+            JOIN warehouses wt ON tr.to_warehouse_id = wt.id
+            LEFT JOIN users u ON tr.created_by = u.id
+            ORDER BY tr.created_at DESC
             LIMIT $1 OFFSET $2
         `, [Number(limit), offset]);
 
@@ -802,46 +1073,138 @@ export const listTransfers = async (req, res) => {
     }
 };
 
-export const getTransferByCode = async (req, res) => {
+export const getTransferById = async (req, res) => {
     try {
-        const { code } = req.params;
+        const { id } = req.params;
 
-        const header = await pool.query(`
-            SELECT t.note AS transfer_code, t.created_at, t.created_by,
-                   u.name AS created_by_name,
-                   COUNT(*) AS item_count,
-                   MAX(CASE WHEN t.qty_change < 0 THEN w.name END) AS from_warehouse_name,
-                   MAX(CASE WHEN t.qty_change > 0 THEN w.name END) AS to_warehouse_name
-            FROM inventory_transactions t
-            JOIN warehouses w ON t.warehouse_id = w.id
-            LEFT JOIN users u ON t.created_by = u.id
-            WHERE t.ref_type = 'TRANSFER' AND t.note = $1
-            GROUP BY t.note, t.created_at, t.created_by, u.name
-        `, [code]);
-
-        if (header.rows.length === 0) {
-            return res.status(404).json({ success: false, message: 'Transfer not found' });
+        const tr = await pool.query(`
+            SELECT tr.*, wf.name AS from_warehouse_name, wt.name AS to_warehouse_name, u.name AS created_by_name
+            FROM transfer_orders tr
+            JOIN warehouses wf ON tr.from_warehouse_id = wf.id
+            JOIN warehouses wt ON tr.to_warehouse_id = wt.id
+            LEFT JOIN users u ON tr.created_by = u.id
+            WHERE tr.id = $1
+        `, [id]);
+        if (tr.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Không tìm thấy phiếu chuyển kho' });
         }
 
         const items = await pool.query(`
-            SELECT it.id, it.qty_change, it.balance_after, it.ref_id, it.created_at,
-                   it.variant_id, pv.sku, pv.color, pv.size,
-                   p.id AS product_id, p.name AS product_name,
-                   w.id AS warehouse_id, w.name AS warehouse_name
-            FROM inventory_transactions it
-            JOIN product_variants pv ON it.variant_id = pv.id
+            SELECT ti.id, ti.variant_id, ti.quantity,
+                   pv.sku, pv.color, pv.size, p.name AS product_name, p.id AS product_id
+            FROM transfer_items ti
+            JOIN product_variants pv ON ti.variant_id = pv.id
             JOIN products p ON pv.product_id = p.id
-            JOIN warehouses w ON it.warehouse_id = w.id
-            WHERE it.ref_type = 'TRANSFER' AND it.note = $1
-            ORDER BY it.ref_id, (CASE WHEN it.qty_change < 0 THEN 0 ELSE 1 END), it.id
-        `, [code]);
+            WHERE ti.transfer_order_id = $1
+            ORDER BY p.name, pv.color, pv.size
+        `, [id]);
 
-        return res.status(200).json({
-            success: true,
-            data: { ...header.rows[0], items: items.rows }
-        });
+        return res.status(200).json({ success: true, data: { ...tr.rows[0], items: items.rows } });
     } catch (error) {
-        console.error('getTransferByCode error:', error);
+        console.error('getTransferById error:', error);
+        return res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+export const updateTransfer = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { notes, items } = req.body;
+
+        const existing = await pool.query(`SELECT id, status FROM transfer_orders WHERE id = $1`, [id]);
+        if (existing.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Không tìm thấy phiếu chuyển kho' });
+        }
+        if (existing.rows[0].status !== 'DRAFT') {
+            return res.status(400).json({ success: false, message: 'Chỉ sửa được phiếu ở trạng thái DRAFT' });
+        }
+
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            if (notes != null) {
+                await client.query(`UPDATE transfer_orders SET notes = $1 WHERE id = $2`, [notes, id]);
+            }
+            if (items && Array.isArray(items)) {
+                await client.query(`DELETE FROM transfer_items WHERE transfer_order_id = $1`, [id]);
+                for (const item of items) {
+                    if (!item.variant_id || !item.quantity || item.quantity <= 0) {
+                        throw new Error('Dữ liệu sản phẩm không hợp lệ');
+                    }
+                    await client.query(`
+                        INSERT INTO transfer_items (transfer_order_id, variant_id, quantity)
+                        VALUES ($1, $2, $3)
+                    `, [id, item.variant_id, item.quantity]);
+                }
+            }
+            await client.query('COMMIT');
+            return res.status(200).json({ success: true, message: 'Cập nhật thành công' });
+        } catch (e) {
+            await client.query('ROLLBACK');
+            if (e.message === 'Dữ liệu sản phẩm không hợp lệ') {
+                return res.status(400).json({ success: false, message: e.message });
+            }
+            throw e;
+        } finally {
+            client.release();
+        }
+    } catch (error) {
+        console.error('updateTransfer error:', error);
+        return res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+export const completeTransfer = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+
+            const result = await client.query(`
+                UPDATE transfer_orders SET status = 'COMPLETED', completed_at = NOW()
+                WHERE id = $1 AND status = 'DRAFT'
+                RETURNING id, transfer_code, from_warehouse_id, to_warehouse_id, created_by
+            `, [id]);
+
+            if (result.rows.length === 0) {
+                await client.query('ROLLBACK');
+                const current = await pool.query(`SELECT status FROM transfer_orders WHERE id = $1`, [id]);
+                if (current.rows.length > 0 && current.rows[0].status === 'COMPLETED') {
+                    return res.status(200).json({ success: true, message: 'Phiếu chuyển kho đã ghi sổ trước đó' });
+                }
+                return res.status(400).json({ success: false, message: 'Phiếu chuyển kho không thể ghi sổ' });
+            }
+
+            const tr = result.rows[0];
+            const items = await client.query(
+                `SELECT variant_id, quantity FROM transfer_items WHERE transfer_order_id = $1 ORDER BY id`, [id]
+            );
+            for (const item of items.rows) {
+                await transferStock(client, {
+                    fromWarehouseId: tr.from_warehouse_id,
+                    toWarehouseId: tr.to_warehouse_id,
+                    variantId: item.variant_id,
+                    quantity: item.quantity,
+                    refId: tr.id,
+                    createdBy: tr.created_by,
+                    note: tr.transfer_code,
+                });
+            }
+            await client.query('COMMIT');
+            return res.status(200).json({ success: true, message: 'Đã ghi sổ phiếu chuyển kho' });
+        } catch (e) {
+            await client.query('ROLLBACK');
+            throw e;
+        } finally {
+            client.release();
+        }
+    } catch (error) {
+        if (error.message === 'INSUFFICIENT_STOCK') {
+            return res.status(400).json({ success: false, message: 'Kho nguồn không đủ tồn để chuyển' });
+        }
+        console.error('completeTransfer error:', error);
         return res.status(500).json({ success: false, message: 'Server error' });
     }
 };
@@ -875,12 +1238,12 @@ export const addSupplierVariant = async (req, res) => {
         const { variant_id, cost_price } = req.body;
 
         if (!variant_id) {
-            return res.status(400).json({ success: false, message: 'variant_id is required' });
+            return res.status(400).json({ success: false, message: 'variant_id là bắt buộc' });
         }
 
         const supplier = await pool.query(`SELECT id FROM suppliers WHERE id = $1 AND is_active = true`, [id]);
         if (supplier.rows.length === 0) {
-            return res.status(404).json({ success: false, message: 'Supplier not found' });
+            return res.status(404).json({ success: false, message: 'Không tìm thấy nhà cung cấp' });
         }
 
         const existing = await pool.query(
@@ -928,7 +1291,7 @@ export const updateSupplierVariant = async (req, res) => {
         `, [cost_price || null, id, variantId]);
 
         if (result.rows.length === 0) {
-            return res.status(404).json({ success: false, message: 'Supplier variant not found' });
+            return res.status(404).json({ success: false, message: 'Không tìm thấy giá nhà cung cấp' });
         }
 
         return res.status(200).json({ success: true, data: result.rows[0] });
@@ -946,9 +1309,9 @@ export const deleteSupplierVariant = async (req, res) => {
             [id, variantId]
         );
         if (result.rows.length === 0) {
-            return res.status(404).json({ success: false, message: 'Supplier variant not found' });
+            return res.status(404).json({ success: false, message: 'Không tìm thấy giá nhà cung cấp' });
         }
-        return res.status(200).json({ success: true, message: 'Removed' });
+        return res.status(200).json({ success: true, message: 'Đã xóa' });
     } catch (error) {
         console.error('deleteSupplierVariant error:', error);
         return res.status(500).json({ success: false, message: 'Server error' });
@@ -977,7 +1340,7 @@ export const getSuppliersByVariantIds = async (req, res) => {
     try {
         const { ids } = req.query;
         if (!ids) {
-            return res.status(400).json({ success: false, message: 'ids query param is required (comma-separated)' });
+            return res.status(400).json({ success: false, message: 'Thiếu tham số ids' });
         }
         const variantIds = ids.split(',').map(Number).filter(Boolean);
         if (variantIds.length === 0) {
