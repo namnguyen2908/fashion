@@ -18,6 +18,8 @@ import orderRoutes from "./routes/order.js";
 import roleRoutes from "./routes/role.js";
 import discountRoutes from "./routes/discount.js";
 import saleRoutes from "./routes/sale.js";
+import purchaseOrderRoutes from "./routes/purchaseOrder.js";
+import goodsReceiptRoutes from "./routes/goodsReceipt.js";
 
 
 dotenv.config();
@@ -48,6 +50,8 @@ app.use("/api/orders", orderRoutes);
 app.use("/api/roles", roleRoutes);
 app.use("/api/discounts", discountRoutes);
 app.use("/api/sales", saleRoutes);
+app.use("/api/purchase-orders", purchaseOrderRoutes);
+app.use("/api/goods-receipts", goodsReceiptRoutes);
 
 
 app.get("/", (req, res) => {
