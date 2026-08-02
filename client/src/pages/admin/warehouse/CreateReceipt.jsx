@@ -1,72 +1,24 @@
 import { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import api from "../../../services/api";
 import { IconSpinner, IconTrash, IconSearch } from "../../../components/admin/Icons";
 
-function SupplierCompareModal({ variantId, onClose, onSelect }) {
-  const [suppliers, setSuppliers] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!variantId) return;
-    setLoading(true);
-    api.get(`/warehouse/variants/${variantId}/suppliers`)
-      .then(({ data }) => setSuppliers(data?.data ?? []))
-      .catch(() => setSuppliers([]))
-      .finally(() => setLoading(false));
-  }, [variantId]);
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={onClose}>
-      <div className="bg-white rounded-lg border border-neutral-100 shadow-2xl p-6 max-w-lg w-full" onClick={(e) => e.stopPropagation()}>
-        <h3 className="font-medium mb-4">So sánh giá nhà cung cấp</h3>
-        {loading ? (
-          <div className="flex items-center justify-center py-8 text-neutral-400 gap-2">
-            <IconSpinner className="w-5 h-5" />
-            <span className="text-sm">Đang tải...</span>
-          </div>
-        ) : suppliers.length === 0 ? (
-          <p className="text-sm text-neutral-500 py-4 text-center">Chưa có nhà cung cấp nào.</p>
-        ) : (
-          <div className="space-y-2">
-            {suppliers.map((s) => (
-              <div key={s.supplier_id}
-                className="flex items-center justify-between p-3 border border-neutral-100 rounded-md hover:bg-neutral-50 cursor-pointer"
-                onClick={() => { onSelect?.(s); onClose(); }}
-              >
-                <div>
-                  <p className="text-sm font-medium text-neutral-900">{s.supplier_name}</p>
-                  <p className="text-xs text-neutral-500">{s.supplier_code || ""}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm font-medium">{s.cost_price ? `${Number(s.cost_price).toLocaleString("vi-VN")}₫` : "—"}</p>
-                  {s.previous_cost_price && Number(s.previous_cost_price) !== Number(s.cost_price) && (
-                    <p className="text-xs text-neutral-400 line-through">{Number(s.previous_cost_price).toLocaleString("vi-VN")}₫</p>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-        <div className="flex justify-end mt-4">
-          <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-neutral-600">Đóng</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function CreateReceipt() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const poId = searchParams.get("po_id");
+
+  const [loading, setLoading] = useState(!!poId);
   const [suppliers, setSuppliers] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
   const [supplierId, setSupplierId] = useState("");
   const [warehouseId, setWarehouseId] = useState("");
+  const [receiptDate, setReceiptDate] = useState("");
   const [notes, setNotes] = useState("");
+  const [supplierPrices, setSupplierPrices] = useState({});
   const [products, setProducts] = useState([]);
   const [searchText, setSearchText] = useState("");
   const [searchResults, setSearchResults] = useState([]);
-  const [showCompare, setShowCompare] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const searchRef = useRef(null);
@@ -82,6 +34,52 @@ export default function CreateReceipt() {
       .then(({ data }) => setWarehouses(Array.isArray(data?.data) ? data.data : []))
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!supplierId) { setSupplierPrices({}); return; }
+    api.get(`/warehouse/suppliers/${supplierId}/variants`)
+      .then(({ data }) => {
+        const map = {};
+        (data?.data ?? []).forEach((v) => { map[v.variant_id] = v.cost_price; });
+        setSupplierPrices(map);
+      })
+      .catch(() => setSupplierPrices({}));
+  }, [supplierId]);
+
+  // Nếu vào từ PO: tải đơn, khoá nhà cung cấp/kho, prefill sản phẩm từ PO
+  useEffect(() => {
+    if (!poId) return;
+    (async () => {
+      try {
+        const { data } = await api.get(`/purchase-orders/${poId}`);
+        const po = data?.data;
+        if (!po) return;
+        setSupplierId(String(po.supplier_id));
+        setWarehouseId(String(po.warehouse_id));
+        const grouped = {};
+        (po.items ?? []).forEach((item) => {
+          if (item.remaining <= 0) return;
+          if (!grouped[item.product_id]) {
+            grouped[item.product_id] = { id: item.product_id, name: item.product_name, variants: [] };
+          }
+          grouped[item.product_id].variants.push({
+            po_item_id: item.id,
+            variant_id: item.variant_id,
+            sku: item.sku,
+            color: item.color,
+            size: item.size,
+            quantity: String(item.remaining),
+            unit_cost: item.unit_price ? String(item.unit_price) : ""
+          });
+        });
+        setProducts(Object.values(grouped));
+      } catch (err) {
+        setError(err?.response?.data?.message || "Không thể tải đơn đặt hàng.");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [poId]);
 
   useEffect(() => {
     if (!searchText.trim()) { setSearchResults([]); return; }
@@ -100,23 +98,9 @@ export default function CreateReceipt() {
       const variants = (data?.data ?? []).map((v) => ({
         ...v,
         quantity: "",
-        unit_cost: ""
+        unit_cost: supplierPrices[v.variant_id] ? Number(supplierPrices[v.variant_id]) : ""
       }));
-
       if (variants.length === 0) return;
-
-      const variantIds = variants.map((v) => v.variant_id);
-      let supplierInfo = {};
-      try {
-        const { data: sd } = await api.get(`/warehouse/variants/${variantIds[0]}/suppliers`);
-        sd?.data?.forEach((s) => { supplierInfo[s.supplier_id] = s; });
-      } catch {}
-
-      const bestSupplierId = supplierId || Object.keys(supplierInfo)[0] || "";
-      if (bestSupplierId && supplierInfo[bestSupplierId]?.cost_price) {
-        variants.forEach((v) => { v.unit_cost = Number(supplierInfo[bestSupplierId].cost_price); });
-      }
-
       setProducts((prev) => [...prev, { ...product, variants }]);
       setSearchText("");
       setSearchResults([]);
@@ -124,28 +108,13 @@ export default function CreateReceipt() {
     } catch { }
   };
 
-  const removeProduct = (productIndex) => {
-    setProducts((prev) => prev.filter((_, i) => i !== productIndex));
-  };
+  const removeProduct = (idx) => setProducts((prev) => prev.filter((_, i) => i !== idx));
 
-  const updateVariant = (productIndex, variantIndex, field, value) => {
+  const updateVariant = (pIdx, vIdx, field, value) => {
     setProducts((prev) => {
       const updated = [...prev];
-      updated[productIndex] = { ...updated[productIndex] };
-      updated[productIndex].variants = [...updated[productIndex].variants];
-      updated[productIndex].variants[variantIndex] = {
-        ...updated[productIndex].variants[variantIndex],
-        [field]: value
-      };
-      return updated;
-    });
-  };
-
-  const applyPriceToAll = (productIndex, price) => {
-    setProducts((prev) => {
-      const updated = [...prev];
-      updated[productIndex] = { ...updated[productIndex] };
-      updated[productIndex].variants = updated[productIndex].variants.map((v) => ({ ...v, unit_cost: price }));
+      updated[pIdx] = { ...updated[pIdx], variants: [...updated[pIdx].variants] };
+      updated[pIdx].variants[vIdx] = { ...updated[pIdx].variants[vIdx], [field]: value };
       return updated;
     });
   };
@@ -154,32 +123,34 @@ export default function CreateReceipt() {
     e.preventDefault();
     setError("");
 
-    const items = products.flatMap((p) =>
-      p.variants.filter((v) => v.quantity && Number(v.quantity) > 0).map((v) => ({
-        variant_id: v.variant_id,
-        quantity: Number(v.quantity),
-        unit_cost: v.unit_cost ? Number(v.unit_cost) : null
-      }))
-    );
-
-    if (items.length === 0) {
-      setError("Vui lòng chọn ít nhất một sản phẩm và nhập số lượng.");
-      return;
-    }
     if (!warehouseId) {
       setError("Vui lòng chọn kho nhận.");
+      return;
+    }
+    const items = products.flatMap((p) =>
+      p.variants.filter((v) => v.quantity && Number(v.quantity) > 0).map((v) => ({
+        po_item_id: v.po_item_id || null,
+        variant_id: v.variant_id,
+        quantity: Number(v.quantity),
+        unit_cost: v.unit_cost ? Number(v.unit_cost) : 0
+      }))
+    );
+    if (items.length === 0) {
+      setError("Vui lòng chọn ít nhất một sản phẩm và nhập số lượng.");
       return;
     }
 
     setSubmitting(true);
     try {
-      await api.post("/warehouse/receipts", {
-        warehouse_id: Number(warehouseId),
+      const { data } = await api.post("/goods-receipts", {
+        po_id: poId ? Number(poId) : null,
         supplier_id: supplierId ? Number(supplierId) : null,
+        warehouse_id: Number(warehouseId),
+        receipt_date: receiptDate || null,
         notes: notes.trim() || null,
         items
       });
-      navigate("/admin/warehouse/receipts");
+      navigate(`/admin/warehouse/receipts/${data?.data?.id}`);
     } catch (err) {
       setError(err?.response?.data?.message || "Không thể tạo phiếu nhập.");
     } finally {
@@ -187,19 +158,24 @@ export default function CreateReceipt() {
     }
   };
 
-  const allVariantIds = products.flatMap((p) =>
-    p.variants.filter((v) => v.quantity && Number(v.quantity) > 0).map((v) => v.variant_id)
-  );
-
-  const filteredSuppliers = suppliers;
+  const supplierLocked = !!poId;
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10 w-full">
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10 w-full">
       <div className="mb-8">
         <h1 className="text-xl sm:text-2xl font-medium tracking-tight">Tạo phiếu nhập kho</h1>
-        <p className="mt-1 text-sm text-neutral-500">Chọn sản phẩm → nhập số lượng → xác nhận</p>
+        <p className="mt-1 text-sm text-neutral-500">
+          {poId ? "Nhận hàng theo đơn đặt hàng" : "Nhập kho trực tiếp (không qua đơn đặt hàng)"}
+        </p>
       </div>
 
+      {loading ? (
+        <div className="flex items-center justify-center py-20 text-neutral-400 gap-2">
+          <IconSpinner className="w-5 h-5" />
+          <span className="text-sm">Đang tải...</span>
+        </div>
+      ) : (
+      <>
       {error && (
         <p className="mb-6 text-sm text-red-600 bg-red-50 border border-red-100 rounded-md px-4 py-3">{error}</p>
       )}
@@ -207,68 +183,84 @@ export default function CreateReceipt() {
       <form onSubmit={handleSubmit} className="space-y-6">
         <div className="bg-white border border-neutral-200 rounded-lg p-6 space-y-4">
           <h2 className="text-sm font-medium text-neutral-900 uppercase tracking-wider">Thông tin chung</h2>
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div className="flex-1">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div>
               <label className="block text-sm text-neutral-600 mb-1">Kho nhận *</label>
-              <select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}
-                className="w-full border border-neutral-200 rounded-md px-4 py-2 text-sm outline-none focus:border-neutral-400 transition-colors bg-white">
-                <option value="">-- Chọn kho --</option>
-                {warehouses.map((w) => (
-                  <option key={w.id} value={w.id}>{w.name}</option>
-                ))}
-              </select>
+              {supplierLocked ? (
+                <p className="w-full border border-neutral-200 rounded-md px-4 py-2 text-sm bg-neutral-50">
+                  {warehouses.find((w) => String(w.id) === warehouseId)?.name || "—"}
+                </p>
+              ) : (
+                <select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}
+                  className="w-full border border-neutral-200 rounded-md px-4 py-2 text-sm outline-none focus:border-neutral-400 transition-colors bg-white">
+                  <option value="">-- Chọn kho --</option>
+                  {warehouses.map((w) => (
+                    <option key={w.id} value={w.id}>{w.name}</option>
+                  ))}
+                </select>
+              )}
             </div>
-            <div className="flex-1">
+            <div>
               <label className="block text-sm text-neutral-600 mb-1">Nhà cung cấp</label>
-              <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)}
-                className="w-full border border-neutral-200 rounded-md px-4 py-2 text-sm outline-none focus:border-neutral-400 transition-colors bg-white">
-                <option value="">-- Chọn nhà cung cấp --</option>
-                {filteredSuppliers.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name} {s.code ? `(${s.code})` : ""}</option>
-                ))}
-              </select>
+              {supplierLocked ? (
+                <p className="w-full border border-neutral-200 rounded-md px-4 py-2 text-sm bg-neutral-50">
+                  {suppliers.find((s) => String(s.id) === supplierId)?.name || "—"}
+                </p>
+              ) : (
+                <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)}
+                  className="w-full border border-neutral-200 rounded-md px-4 py-2 text-sm outline-none focus:border-neutral-400 transition-colors bg-white">
+                  <option value="">-- Chọn nhà cung cấp --</option>
+                  {suppliers.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              )}
             </div>
-            <div className="w-full sm:w-64">
+            <div>
+              <label className="block text-sm text-neutral-600 mb-1">Ngày nhận</label>
+              <input type="date" value={receiptDate} onChange={(e) => setReceiptDate(e.target.value)}
+                className="w-full border border-neutral-200 rounded-md px-4 py-2 text-sm outline-none focus:border-neutral-400 transition-colors" />
+            </div>
+            <div>
               <label className="block text-sm text-neutral-600 mb-1">Ghi chú</label>
               <input type="text" value={notes} onChange={(e) => setNotes(e.target.value)}
-                placeholder="Ghi chú (không bắt buộc)"
-                className="w-full border border-neutral-200 rounded-md px-4 py-2 text-sm outline-none focus:border-neutral-400 transition-colors"
-              />
+                placeholder="Không bắt buộc"
+                className="w-full border border-neutral-200 rounded-md px-4 py-2 text-sm outline-none focus:border-neutral-400 transition-colors" />
             </div>
           </div>
         </div>
 
         <div className="bg-white border border-neutral-200 rounded-lg p-6 space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-medium text-neutral-900 uppercase tracking-wider">Sản phẩm nhập</h2>
-          </div>
+          <h2 className="text-sm font-medium text-neutral-900 uppercase tracking-wider">Sản phẩm nhập</h2>
 
-          <div className="relative">
+          {!poId && (
             <div className="relative">
-              <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none z-10" />
-              <input ref={searchRef} type="text" value={searchText}
-                onChange={(e) => setSearchText(e.target.value)}
-                placeholder="Tìm sản phẩm để thêm vào phiếu nhập..."
-                className="w-full border border-neutral-200 rounded-md pl-10 pr-4 py-2.5 text-sm outline-none focus:border-neutral-400 transition-colors"
-              />
-            </div>
-            {searchResults.length > 0 && (
-              <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border border-neutral-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
-                {searchResults.map((p) => (
-                  <button key={p.id} type="button"
-                    onMouseDown={() => addProduct(p)}
-                    className="w-full text-left px-4 py-2.5 text-sm hover:bg-neutral-50 border-b border-neutral-50 last:border-0 font-medium"
-                  >
-                    {p.name}
-                  </button>
-                ))}
+              <div className="relative">
+                <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none z-10" />
+                <input ref={searchRef} type="text" value={searchText}
+                  onChange={(e) => setSearchText(e.target.value)}
+                  placeholder="Tìm sản phẩm để thêm vào phiếu nhập..."
+                  className="w-full border border-neutral-200 rounded-md pl-10 pr-4 py-2.5 text-sm outline-none focus:border-neutral-400 transition-colors"
+                />
               </div>
-            )}
-          </div>
+              {searchResults.length > 0 && (
+                <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border border-neutral-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                  {searchResults.map((p) => (
+                    <button key={p.id} type="button" onMouseDown={() => addProduct(p)}
+                      className="w-full text-left px-4 py-2.5 text-sm hover:bg-neutral-50 border-b border-neutral-50 last:border-0 font-medium">
+                      {p.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {products.length === 0 && (
             <div className="border border-dashed border-neutral-200 rounded-lg p-8 text-center">
-              <p className="text-sm text-neutral-400">Tìm và chọn sản phẩm để bắt đầu</p>
+              <p className="text-sm text-neutral-400">
+                {poId ? "Đơn đặt hàng này đã được nhận đủ hoặc chưa có sản phẩm." : "Tìm và chọn sản phẩm để bắt đầu"}
+              </p>
             </div>
           )}
 
@@ -276,21 +268,13 @@ export default function CreateReceipt() {
             <div key={`${product.id}-${pIdx}`} className="border border-neutral-200 rounded-lg overflow-hidden">
               <div className="flex items-center justify-between px-4 py-3 bg-neutral-50 border-b border-neutral-100">
                 <span className="text-sm font-medium text-neutral-900">{product.name}</span>
-                <button type="button" onClick={() => removeProduct(pIdx)}
-                  className="p-1 text-neutral-400 hover:text-red-600 rounded hover:bg-red-50 transition-colors">
-                  <IconTrash className="w-4 h-4" />
-                </button>
+                {!supplierLocked && (
+                  <button type="button" onClick={() => removeProduct(pIdx)}
+                    className="p-1 text-neutral-400 hover:text-red-600 rounded hover:bg-red-50 transition-colors">
+                    <IconTrash className="w-4 h-4" />
+                  </button>
+                )}
               </div>
-
-              <div className="px-4 py-3 flex items-center gap-2 border-b border-neutral-50">
-                <span className="text-xs text-neutral-500">Giá nhập chung:</span>
-                <input type="number" min="0"
-                  onChange={(e) => applyPriceToAll(pIdx, e.target.value ? Number(e.target.value) : "")}
-                  placeholder="Áp dụng cho tất cả..."
-                  className="w-36 border border-neutral-200 rounded px-2 py-1 text-sm outline-none focus:border-neutral-400"
-                />
-              </div>
-
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
@@ -300,7 +284,6 @@ export default function CreateReceipt() {
                       <th className="px-4 py-2 font-medium">SKU</th>
                       <th className="px-4 py-2 font-medium text-right w-28">Số lượng</th>
                       <th className="px-4 py-2 font-medium text-right w-36">Giá nhập</th>
-                      <th className="px-4 py-2 font-medium text-right w-20"></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -313,21 +296,13 @@ export default function CreateReceipt() {
                           <input type="number" min="0" value={variant.quantity}
                             onChange={(e) => updateVariant(pIdx, vIdx, "quantity", e.target.value)}
                             placeholder="SL"
-                            className="w-full border border-neutral-200 rounded px-2 py-1.5 text-sm text-right outline-none focus:border-neutral-400"
-                          />
+                            className="w-full border border-neutral-200 rounded px-2 py-1.5 text-sm text-right outline-none focus:border-neutral-400" />
                         </td>
                         <td className="px-4 py-2">
                           <input type="number" min="0" value={variant.unit_cost}
                             onChange={(e) => updateVariant(pIdx, vIdx, "unit_cost", e.target.value)}
                             placeholder="₫"
-                            className="w-full border border-neutral-200 rounded px-2 py-1.5 text-sm text-right outline-none focus:border-neutral-400"
-                          />
-                        </td>
-                        <td className="px-4 py-2 text-right">
-                          <button type="button" onClick={() => setShowCompare(variant.variant_id)}
-                            className="text-xs text-neutral-400 hover:text-neutral-900 underline underline-offset-2">
-                            So sánh
-                          </button>
+                            className="w-full border border-neutral-200 rounded px-2 py-1.5 text-sm text-right outline-none focus:border-neutral-400" />
                         </td>
                       </tr>
                     ))}
@@ -350,27 +325,12 @@ export default function CreateReceipt() {
             <button type="submit" disabled={submitting}
               className="inline-flex items-center gap-2 px-6 py-2.5 text-sm bg-black text-white rounded-md hover:bg-neutral-800 disabled:opacity-60 transition-colors">
               {submitting && <IconSpinner />}
-              Tạo phiếu nhập
+              Tạo phiếu nhập (Nháp)
             </button>
           </div>
         </div>
       </form>
-
-      {showCompare && (
-        <SupplierCompareModal
-          variantId={showCompare}
-          onClose={() => setShowCompare(null)}
-          onSelect={(s) => {
-            setSupplierId(String(s.supplier_id));
-            setProducts((prev) => prev.map((p) => ({
-              ...p,
-              variants: p.variants.map((v) => ({
-                ...v,
-                unit_cost: s.cost_price ? Number(s.cost_price) : v.unit_cost
-              }))
-            })));
-          }}
-        />
+      </>
       )}
     </div>
   );

@@ -1,0 +1,311 @@
+import { useState, useEffect, useRef, useCallback } from "react";
+import api from "../../../services/api";
+import { IconSpinner, IconTrash, IconSearch } from "../../../components/admin/Icons";
+
+const STATUS = {
+  DRAFT: { label: "Nháp", cls: "text-amber-600 bg-amber-50" },
+  COMPLETED: { label: "Đã ghi sổ", cls: "text-green-600 bg-green-50" },
+};
+
+const formatDate = (value) => {
+  if (!value) return "—";
+  return new Intl.DateTimeFormat("vi-VN", {
+    day: "2-digit", month: "2-digit", year: "numeric",
+    hour: "2-digit", minute: "2-digit"
+  }).format(new Date(value));
+};
+
+export default function TransferList() {
+  const [warehouses, setWarehouses] = useState([]);
+  const [fromWarehouseId, setFromWarehouseId] = useState("");
+  const [toWarehouseId, setToWarehouseId] = useState("");
+  const [notes, setNotes] = useState("");
+  const [products, setProducts] = useState([]);
+  const [searchText, setSearchText] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [list, setList] = useState([]);
+  const [listLoading, setListLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const searchRef = useRef(null);
+
+  useEffect(() => {
+    api.get("/warehouse/warehouses", { params: { active: "true" } })
+      .then(({ data }) => setWarehouses(Array.isArray(data?.data) ? data.data : []))
+      .catch(() => {});
+  }, []);
+
+  const fetchList = useCallback(async () => {
+    setListLoading(true);
+    setError("");
+    try {
+      const { data } = await api.get("/warehouse/transfers", { params: { page, limit: 20 } });
+      setList(data?.data ?? []);
+      setTotalPages(data?.totalPages ?? 1);
+    } catch (err) {
+      setError(err?.response?.data?.message || "Không thể tải danh sách chuyển kho.");
+    } finally {
+      setListLoading(false);
+    }
+  }, [page]);
+
+  useEffect(() => { fetchList(); }, [fetchList]);
+
+  useEffect(() => {
+    if (!searchText.trim()) { setSearchResults([]); return; }
+    const timer = setTimeout(async () => {
+      try {
+        const { data } = await api.get("/products", { params: { search: searchText, limit: 8 } });
+        setSearchResults(data?.data ?? []);
+      } catch { setSearchResults([]); }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchText]);
+
+  const addProduct = async (product) => {
+    try {
+      const { data } = await api.get(`/warehouse/stocks/product/${product.id}`, {
+        params: fromWarehouseId ? { warehouse_id: fromWarehouseId } : {}
+      });
+      const variants = (data?.data ?? []).map((v) => ({ ...v, quantity: "" }));
+      if (variants.length === 0) return;
+      setProducts((prev) => [...prev, { ...product, variants }]);
+      setSearchText("");
+      setSearchResults([]);
+      searchRef.current?.focus();
+    } catch { }
+  };
+
+  const removeProduct = (idx) => setProducts((prev) => prev.filter((_, i) => i !== idx));
+
+  const updateVariant = (pIdx, vIdx, value) => {
+    setProducts((prev) => {
+      const updated = [...prev];
+      updated[pIdx] = { ...updated[pIdx], variants: [...updated[pIdx].variants] };
+      updated[pIdx].variants[vIdx] = { ...updated[pIdx].variants[vIdx], quantity: value };
+      return updated;
+    });
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+
+    if (!fromWarehouseId || !toWarehouseId) { setError("Vui lòng chọn kho nguồn và kho đích."); return; }
+    if (Number(fromWarehouseId) === Number(toWarehouseId)) { setError("Kho nguồn và kho đích phải khác nhau."); return; }
+    const items = products.flatMap((p) =>
+      p.variants.filter((v) => v.quantity && Number(v.quantity) > 0).map((v) => ({
+        variant_id: v.variant_id,
+        quantity: Number(v.quantity)
+      }))
+    );
+    if (items.length === 0) {
+      setError("Vui lòng thêm ít nhất một sản phẩm với số lượng lớn hơn 0.");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await api.post("/warehouse/transfers", {
+        from_warehouse_id: Number(fromWarehouseId),
+        to_warehouse_id: Number(toWarehouseId),
+        notes: notes.trim() || null,
+        items
+      });
+      setProducts([]);
+      setNotes("");
+      setError("");
+      fetchList();
+      alert("Đã tạo phiếu chuyển kho (Nháp). Nhấn \"Ghi sổ\" để áp dụng.");
+    } catch (err) {
+      setError(err?.response?.data?.message || "Không thể tạo phiếu chuyển kho.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const complete = async (tr) => {
+    if (!window.confirm(`Ghi sổ phiếu chuyển kho ${tr.transfer_code}?`)) return;
+    try {
+      await api.post(`/warehouse/transfers/${tr.id}/complete`);
+      fetchList();
+    } catch (err) {
+      alert(err?.response?.data?.message || "Không thể ghi sổ.");
+    }
+  };
+
+  return (
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10 w-full">
+      <div className="mb-8">
+        <h1 className="text-xl sm:text-2xl font-medium tracking-tight">Chuyển kho</h1>
+        <p className="mt-1 text-sm text-neutral-500">Chuyển sản phẩm giữa các kho</p>
+      </div>
+
+      {error && (
+        <p className="mb-6 text-sm text-red-600 bg-red-50 border border-red-100 rounded-md px-4 py-3">{error}</p>
+      )}
+
+      <form onSubmit={handleSubmit} className="mb-10 bg-white border border-neutral-200 rounded-lg p-6 space-y-4">
+        <h2 className="text-sm font-medium text-neutral-900 uppercase tracking-wider">Tạo phiếu chuyển kho</h2>
+        <div className="flex flex-col sm:flex-row gap-4">
+          <div className="flex-1">
+            <label className="block text-sm text-neutral-600 mb-1">Kho nguồn *</label>
+            <select value={fromWarehouseId} onChange={(e) => setFromWarehouseId(e.target.value)}
+              className="w-full border border-neutral-200 rounded-md px-4 py-2 text-sm outline-none focus:border-neutral-400 transition-colors bg-white">
+              <option value="">-- Chọn kho --</option>
+              {warehouses.map((w) => (
+                <option key={w.id} value={w.id}>{w.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex-1">
+            <label className="block text-sm text-neutral-600 mb-1">Kho đích *</label>
+            <select value={toWarehouseId} onChange={(e) => setToWarehouseId(e.target.value)}
+              className="w-full border border-neutral-200 rounded-md px-4 py-2 text-sm outline-none focus:border-neutral-400 transition-colors bg-white">
+              <option value="">-- Chọn kho --</option>
+              {warehouses.map((w) => (
+                <option key={w.id} value={w.id}>{w.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex-1">
+            <label className="block text-sm text-neutral-600 mb-1">Ghi chú</label>
+            <input type="text" value={notes} onChange={(e) => setNotes(e.target.value)}
+              placeholder="Không bắt buộc"
+              className="w-full border border-neutral-200 rounded-md px-4 py-2 text-sm outline-none focus:border-neutral-400 transition-colors" />
+          </div>
+        </div>
+
+        <div className="relative">
+          <div className="relative">
+            <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none z-10" />
+            <input ref={searchRef} type="text" value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              placeholder="Tìm sản phẩm để chuyển..."
+              className="w-full border border-neutral-200 rounded-md pl-10 pr-4 py-2.5 text-sm outline-none focus:border-neutral-400 transition-colors" />
+          </div>
+          {searchResults.length > 0 && (
+            <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border border-neutral-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
+              {searchResults.map((p) => (
+                <button key={p.id} type="button" onMouseDown={() => addProduct(p)}
+                  className="w-full text-left px-4 py-2.5 text-sm hover:bg-neutral-50 border-b border-neutral-50 last:border-0 font-medium">
+                  {p.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {products.length > 0 && (
+          <div className="border border-neutral-200 rounded-lg overflow-hidden">
+            {products.map((product, pIdx) => (
+              <div key={`${product.id}-${pIdx}`} className="border-b border-neutral-100 last:border-0">
+                <div className="flex items-center justify-between px-4 py-2.5 bg-neutral-50">
+                  <span className="text-sm font-medium text-neutral-900">{product.name}</span>
+                  <button type="button" onClick={() => removeProduct(pIdx)}
+                    className="p-1 text-neutral-400 hover:text-red-600 rounded hover:bg-red-50 transition-colors">
+                    <IconTrash className="w-4 h-4" />
+                  </button>
+                </div>
+                {product.variants.map((variant, vIdx) => (
+                  <div key={variant.variant_id} className="flex items-center gap-3 px-4 py-2 border-t border-neutral-50">
+                    <span className="flex-1 text-sm text-neutral-700">
+                      {variant.color || "—"}{variant.size ? ` / ${variant.size}` : ""}
+                      <span className="ml-2 text-xs text-neutral-400 font-mono">{variant.sku}</span>
+                    </span>
+                    <input type="number" min="0" value={variant.quantity}
+                      onChange={(e) => updateVariant(pIdx, vIdx, e.target.value)}
+                      placeholder="SL"
+                      className="w-28 border border-neutral-200 rounded px-2 py-1.5 text-sm text-right outline-none focus:border-neutral-400" />
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="flex justify-end">
+          <button type="submit" disabled={submitting}
+            className="inline-flex items-center gap-2 px-6 py-2.5 text-sm bg-black text-white rounded-md hover:bg-neutral-800 disabled:opacity-60 transition-colors">
+            {submitting && <IconSpinner />}
+            Tạo phiếu chuyển kho (Nháp)
+          </button>
+        </div>
+      </form>
+
+      <h2 className="text-sm font-medium text-neutral-900 uppercase tracking-wider mb-4">Danh sách phiếu chuyển kho</h2>
+      {listLoading ? (
+        <div className="flex items-center justify-center py-12 text-neutral-400 gap-2">
+          <IconSpinner className="w-4 h-4" />
+          <span className="text-xs">Đang tải...</span>
+        </div>
+      ) : list.length === 0 ? (
+        <div className="border border-dashed border-neutral-200 rounded-lg bg-white p-10 text-center">
+          <p className="text-sm text-neutral-500">Chưa có phiếu chuyển kho nào.</p>
+        </div>
+      ) : (
+        <>
+          <div className="bg-white border border-neutral-200 rounded-lg overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-neutral-50 text-left text-xs uppercase tracking-wider text-neutral-500">
+                    <th className="px-4 py-3 font-medium">Mã phiếu</th>
+                    <th className="px-4 py-3 font-medium hidden sm:table-cell">Từ → Đến</th>
+                    <th className="px-4 py-3 font-medium hidden md:table-cell">Số mặt hàng</th>
+                    <th className="px-4 py-3 font-medium text-right">Tổng SL</th>
+                    <th className="px-4 py-3 font-medium">Trạng thái</th>
+                    <th className="px-4 py-3 font-medium hidden lg:table-cell">Ngày tạo</th>
+                    <th className="px-4 py-3 font-medium text-right">Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {list.map((tr) => (
+                    <tr key={tr.id} className="border-t border-neutral-100 hover:bg-neutral-50/80 transition-colors">
+                      <td className="px-4 py-3 font-mono text-xs text-neutral-500">{tr.transfer_code}</td>
+                      <td className="px-4 py-3 text-neutral-600 hidden sm:table-cell">
+                        {tr.from_warehouse_name} → {tr.to_warehouse_name}
+                      </td>
+                      <td className="px-4 py-3 text-neutral-600 hidden md:table-cell">{tr.item_count}</td>
+                      <td className="px-4 py-3 text-right font-medium">{tr.total_qty}</td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${STATUS[tr.status]?.cls || ""}`}>
+                          {STATUS[tr.status]?.label || tr.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-neutral-500 hidden lg:table-cell">{formatDate(tr.created_at)}</td>
+                      <td className="px-4 py-3 text-right">
+                        {tr.status === "DRAFT" && (
+                          <button type="button" onClick={() => complete(tr)}
+                            className="px-2 py-1 text-xs text-green-600 border border-green-200 rounded-md hover:bg-green-50">
+                            Ghi sổ
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-3 mt-6">
+              <button type="button" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}
+                className="px-4 py-2 text-sm border border-neutral-200 rounded-md disabled:opacity-40 hover:bg-neutral-50">
+                Trước
+              </button>
+              <span className="text-sm text-neutral-500">Trang {page} / {totalPages}</span>
+              <button type="button" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}
+                className="px-4 py-2 text-sm border border-neutral-200 rounded-md disabled:opacity-40 hover:bg-neutral-50">
+                Sau
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
