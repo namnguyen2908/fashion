@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
 import api from "../../../services/api";
-import { IconSpinner, IconTrash, IconSearch } from "../../../components/admin/Icons";
+import { IconSpinner, IconTrash } from "../../../components/admin/Icons";
+import ProductSearchSelect from "../../../components/admin/ProductSearchSelect";
 
 export default function SupplierDetail() {
   const { id } = useParams();
@@ -10,8 +11,6 @@ export default function SupplierDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showAdd, setShowAdd] = useState(false);
-  const [addSearch, setAddSearch] = useState("");
-  const [addResults, setAddResults] = useState([]);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [productVariants, setProductVariants] = useState([]);
   const [bulkPrice, setBulkPrice] = useState("");
@@ -34,25 +33,12 @@ export default function SupplierDetail() {
     })();
   }, [id]);
 
-  useEffect(() => {
-    if (!addSearch.trim()) { setAddResults([]); return; }
-    const timer = setTimeout(async () => {
-      try {
-        const { data } = await api.get("/products", { params: { search: addSearch, limit: 8 } });
-        setAddResults(data?.data ?? []);
-      } catch { setAddResults([]); }
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [addSearch]);
-
   const selectProduct = async (product) => {
     try {
       const { data } = await api.get(`/warehouse/stocks/product/${product.id}`);
       const pv = data?.data ?? [];
       setSelectedProduct(product);
       setProductVariants(pv.map((v) => ({ ...v, cost_price: "", _selected: false })));
-      setAddSearch("");
-      setAddResults([]);
     } catch { }
   };
 
@@ -162,28 +148,12 @@ export default function SupplierDetail() {
         {showAdd && (
           <div className="p-4 bg-neutral-50 border-b border-neutral-100">
             {!selectedProduct ? (
-              <div className="relative">
-                <label className="block text-xs text-neutral-500 mb-1">Tìm sản phẩm</label>
-                <div className="relative">
-                  <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none z-10" />
-                  <input type="text" value={addSearch}
-                    onChange={(e) => setAddSearch(e.target.value)}
-                    placeholder="Gõ tên sản phẩm..."
-                    className="w-full border border-neutral-200 rounded-md pl-10 pr-4 py-2 text-sm outline-none focus:border-neutral-400 bg-white"
-                  />
-                </div>
-                {addResults.length > 0 && (
-                  <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-neutral-200 rounded-md shadow-lg max-h-48 overflow-y-auto">
-                    {addResults.map((p) => (
-                      <button key={p.id} type="button"
-                        onMouseDown={() => selectProduct(p)}
-                        className="w-full text-left px-3 py-2 text-sm hover:bg-neutral-50 border-b border-neutral-50"
-                      >
-                        {p.name} {alreadyAssigned.has(p.id) ? "(đã có)" : ""}
-                      </button>
-                    ))}
-                  </div>
-                )}
+              <div>
+                <ProductSearchSelect
+                  onSelect={selectProduct}
+                  placeholder="Gõ tên sản phẩm..."
+                  optionLabel={(p) => `${p.name}${alreadyAssigned.has(p.id) ? " (đã có)" : ""}`}
+                />
               </div>
             ) : (
               <div>

@@ -1,21 +1,37 @@
-import { useState, useRef, useMemo, useEffect } from "react";
-import { IconSearch, IconChevron } from "./Icons";
+import { useState, useRef, useEffect } from "react";
+import api from "../../services/api";
+import { IconSearch, IconChevron, IconSpinner } from "./Icons";
 
-export default function AutocompleteSelect({ options, value, onChange, placeholder = "Chọn mục" }) {
+export default function ProductSearchSelect({
+  onSelect,
+  placeholder = "Tìm sản phẩm để thêm...",
+  disabled = false,
+  optionLabel = (p) => p.name,
+}) {
   const [query, setQuery] = useState("");
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const rootRef = useRef(null);
   const inputRef = useRef(null);
   const listRef = useRef(null);
 
-  const selected = options.find((o) => String(o.value) === String(value));
-
-  const filtered = useMemo(() => {
-    if (!query.trim()) return options;
-    const q = query.toLowerCase().trim();
-    return options.filter((o) => o.label.toLowerCase().includes(q));
-  }, [options, query]);
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) return;
+    const timer = setTimeout(async () => {
+      try {
+        const { data } = await api.get("/products", { params: { search: q, limit: 8 } });
+        setResults(data?.data ?? []);
+      } catch {
+        setResults([]);
+      } finally {
+        setLoading(false);
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [query]);
 
   useEffect(() => {
     const handler = (e) => {
@@ -36,11 +52,25 @@ export default function AutocompleteSelect({ options, value, onChange, placehold
     el?.scrollIntoView({ block: "nearest" });
   }, [highlightedIndex]);
 
-  const select = (opt) => {
-    onChange(opt?.value || "");
+  const handleQueryChange = (e) => {
+    const value = e.target.value;
+    setQuery(value);
+    if (!value.trim()) {
+      setResults([]);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
+  };
+
+  const pick = (product) => {
+    onSelect(product);
     setQuery("");
-    setOpen(false);
+    setResults([]);
+    setLoading(false);
     setHighlightedIndex(-1);
+    setOpen(true);
+    inputRef.current?.focus();
   };
 
   const toggle = () => {
@@ -48,6 +78,8 @@ export default function AutocompleteSelect({ options, value, onChange, placehold
       setOpen(false);
     } else {
       setQuery("");
+      setResults([]);
+      setLoading(false);
       setHighlightedIndex(-1);
       setOpen(true);
     }
@@ -59,51 +91,35 @@ export default function AutocompleteSelect({ options, value, onChange, placehold
       setOpen(false);
     } else if (e.key === "ArrowDown") {
       e.preventDefault();
-      if (filtered.length === 0) return;
-      setHighlightedIndex((i) => (i + 1) % filtered.length);
+      if (results.length === 0) return;
+      setHighlightedIndex((i) => (i + 1) % results.length);
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      if (filtered.length === 0) return;
-      setHighlightedIndex((i) => (i - 1 + filtered.length) % filtered.length);
+      if (results.length === 0) return;
+      setHighlightedIndex((i) => (i - 1 + results.length) % results.length);
     } else if (e.key === "Enter") {
       e.preventDefault();
-      if (highlightedIndex >= 0 && filtered[highlightedIndex]) {
-        select(filtered[highlightedIndex]);
+      if (highlightedIndex >= 0 && results[highlightedIndex]) {
+        pick(results[highlightedIndex]);
       }
     }
   };
 
   return (
-    <div ref={rootRef} className="relative w-full sm:w-64">
+    <div ref={rootRef} className="relative w-full">
       <button
         type="button"
         onClick={toggle}
+        disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className={`flex w-full items-center justify-between gap-2 border rounded-md bg-white px-4 py-2.5 text-sm outline-none transition-colors ${
+        className={`flex w-full items-center justify-between gap-2 rounded-md border bg-white px-4 py-2.5 text-sm outline-none transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
           open ? "border-neutral-400" : "border-neutral-200"
-        } focus:border-neutral-400 ${selected ? "text-neutral-900" : "text-neutral-400"}`}
+        } text-neutral-400 focus:border-neutral-400`}
       >
-        <span className="truncate text-left">{selected ? selected.label : placeholder}</span>
+        <span className="truncate text-left">{placeholder}</span>
         <IconChevron expanded={open} className="h-4 w-4 shrink-0 text-neutral-400" />
       </button>
-
-      {value && (
-        <button
-          type="button"
-          aria-label="Xóa lựa chọn"
-          onClick={(e) => {
-            e.stopPropagation();
-            select(null);
-            inputRef.current?.focus();
-          }}
-          className="absolute right-9 top-1/2 -translate-y-1/2 rounded-md p-0.5 text-neutral-400 transition-colors hover:text-neutral-700"
-        >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
-          </svg>
-        </button>
-      )}
 
       {open && (
         <div className="absolute z-50 mt-1 w-full overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-lg">
@@ -114,17 +130,14 @@ export default function AutocompleteSelect({ options, value, onChange, placehold
                 ref={inputRef}
                 type="text"
                 value={query}
-                onChange={(e) => {
-                  setQuery(e.target.value);
-                  setHighlightedIndex(-1);
-                }}
+                onChange={handleQueryChange}
                 onKeyDown={handleKeyDown}
-                placeholder="Tìm kiếm..."
+                placeholder="Tìm kiếm sản phẩm..."
                 role="combobox"
                 aria-expanded="true"
-                aria-controls="autocomplete-select-listbox"
+                aria-controls="product-search-listbox"
                 aria-activedescendant={
-                  highlightedIndex >= 0 ? `autocomplete-select-option-${highlightedIndex}` : undefined
+                  highlightedIndex >= 0 ? `product-search-option-${highlightedIndex}` : undefined
                 }
                 className="w-full rounded-md border border-neutral-200 py-2 pl-10 pr-3 text-sm outline-none transition-colors focus:border-neutral-400"
               />
@@ -132,36 +145,40 @@ export default function AutocompleteSelect({ options, value, onChange, placehold
           </div>
 
           <div
-            id="autocomplete-select-listbox"
+            id="product-search-listbox"
             role="listbox"
             ref={listRef}
             className="max-h-60 overflow-y-auto py-1"
           >
-            {filtered.length === 0 ? (
+            {loading ? (
+              <div className="flex items-center justify-center gap-2 px-3 py-4 text-neutral-400">
+                <IconSpinner className="h-4 w-4" />
+                <span className="text-sm">Đang tìm kiếm...</span>
+              </div>
+            ) : !query.trim() ? (
+              <p className="px-3 py-4 text-center text-sm text-neutral-400">Nhập từ khóa để tìm sản phẩm</p>
+            ) : results.length === 0 ? (
               <p className="px-3 py-4 text-center text-sm text-neutral-400">Không tìm thấy dữ liệu</p>
             ) : (
-              filtered.map((opt, index) => {
-                const isSelected = String(opt.value) === String(value);
+              results.map((p, index) => {
                 const isHighlighted = index === highlightedIndex;
                 return (
                   <button
-                    key={opt.value}
+                    key={p.id}
                     type="button"
-                    id={`autocomplete-select-option-${index}`}
+                    id={`product-search-option-${index}`}
                     role="option"
-                    aria-selected={isSelected}
+                    aria-selected={isHighlighted}
                     data-highlighted={isHighlighted}
                     onMouseEnter={() => setHighlightedIndex(index)}
-                    onClick={() => select(opt)}
+                    onClick={() => pick(p)}
                     className={`w-full px-3 py-2 text-left text-sm transition-colors ${
-                      isSelected
-                        ? "bg-neutral-900 text-white"
-                        : isHighlighted
-                          ? "bg-neutral-100 text-neutral-900"
-                          : "text-neutral-700 hover:bg-neutral-100"
+                      isHighlighted
+                        ? "bg-neutral-100 text-neutral-900"
+                        : "text-neutral-700 hover:bg-neutral-100"
                     }`}
                   >
-                    {opt.label}
+                    {optionLabel(p)}
                   </button>
                 );
               })

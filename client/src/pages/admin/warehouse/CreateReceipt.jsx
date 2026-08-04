@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import api from "../../../services/api";
-import { IconSpinner, IconTrash, IconSearch } from "../../../components/admin/Icons";
+import { IconSpinner, IconTrash } from "../../../components/admin/Icons";
+import ProductSearchSelect from "../../../components/admin/ProductSearchSelect";
 
 export default function CreateReceipt() {
   const navigate = useNavigate();
@@ -17,11 +18,8 @@ export default function CreateReceipt() {
   const [notes, setNotes] = useState("");
   const [supplierPrices, setSupplierPrices] = useState({});
   const [products, setProducts] = useState([]);
-  const [searchText, setSearchText] = useState("");
-  const [searchResults, setSearchResults] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const searchRef = useRef(null);
 
   useEffect(() => {
     api.get("/warehouse/suppliers", { params: { active: "true" } })
@@ -81,17 +79,6 @@ export default function CreateReceipt() {
     })();
   }, [poId]);
 
-  useEffect(() => {
-    if (!searchText.trim()) { setSearchResults([]); return; }
-    const timer = setTimeout(async () => {
-      try {
-        const { data } = await api.get("/products", { params: { search: searchText, limit: 8 } });
-        setSearchResults(data?.data ?? []);
-      } catch { setSearchResults([]); }
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [searchText]);
-
   const addProduct = async (product) => {
     try {
       const { data } = await api.get(`/warehouse/stocks/product/${product.id}`);
@@ -102,9 +89,6 @@ export default function CreateReceipt() {
       }));
       if (variants.length === 0) return;
       setProducts((prev) => [...prev, { ...product, variants }]);
-      setSearchText("");
-      setSearchResults([]);
-      searchRef.current?.focus();
     } catch { }
   };
 
@@ -234,26 +218,10 @@ export default function CreateReceipt() {
           <h2 className="text-sm font-medium text-neutral-900 uppercase tracking-wider">Sản phẩm nhập</h2>
 
           {!poId && (
-            <div className="relative">
-              <div className="relative">
-                <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none z-10" />
-                <input ref={searchRef} type="text" value={searchText}
-                  onChange={(e) => setSearchText(e.target.value)}
-                  placeholder="Tìm sản phẩm để thêm vào phiếu nhập..."
-                  className="w-full border border-neutral-200 rounded-md pl-10 pr-4 py-2.5 text-sm outline-none focus:border-neutral-400 transition-colors"
-                />
-              </div>
-              {searchResults.length > 0 && (
-                <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border border-neutral-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
-                  {searchResults.map((p) => (
-                    <button key={p.id} type="button" onMouseDown={() => addProduct(p)}
-                      className="w-full text-left px-4 py-2.5 text-sm hover:bg-neutral-50 border-b border-neutral-50 last:border-0 font-medium">
-                      {p.name}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            <ProductSearchSelect
+              onSelect={addProduct}
+              placeholder="Tìm sản phẩm để thêm vào phiếu nhập..."
+            />
           )}
 
           {products.length === 0 && (
