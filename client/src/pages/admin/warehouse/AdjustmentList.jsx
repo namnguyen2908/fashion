@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import api from "../../../services/api";
-import { IconSpinner, IconTrash, IconSearch } from "../../../components/admin/Icons";
+import { IconSpinner, IconTrash } from "../../../components/admin/Icons";
+import ProductSearchSelect from "../../../components/admin/ProductSearchSelect";
 
 const STATUS = {
   DRAFT: { label: "Nháp", cls: "text-amber-600 bg-amber-50" },
@@ -20,15 +21,12 @@ export default function AdjustmentList() {
   const [warehouseId, setWarehouseId] = useState("");
   const [reason, setReason] = useState("");
   const [products, setProducts] = useState([]);
-  const [searchText, setSearchText] = useState("");
-  const [searchResults, setSearchResults] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [list, setList] = useState([]);
   const [listLoading, setListLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const searchRef = useRef(null);
 
   useEffect(() => {
     api.get("/warehouse/warehouses", { params: { active: "true" } })
@@ -52,17 +50,6 @@ export default function AdjustmentList() {
 
   useEffect(() => { fetchList(); }, [fetchList]);
 
-  useEffect(() => {
-    if (!searchText.trim()) { setSearchResults([]); return; }
-    const timer = setTimeout(async () => {
-      try {
-        const { data } = await api.get("/products", { params: { search: searchText, limit: 8 } });
-        setSearchResults(data?.data ?? []);
-      } catch { setSearchResults([]); }
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [searchText]);
-
   const addProduct = async (product) => {
     try {
       const { data } = await api.get(`/warehouse/stocks/product/${product.id}`, {
@@ -71,9 +58,6 @@ export default function AdjustmentList() {
       const variants = (data?.data ?? []).map((v) => ({ ...v, quantity: "" }));
       if (variants.length === 0) return;
       setProducts((prev) => [...prev, { ...product, variants }]);
-      setSearchText("");
-      setSearchResults([]);
-      searchRef.current?.focus();
     } catch { }
   };
 
@@ -166,25 +150,10 @@ export default function AdjustmentList() {
           </div>
         </div>
 
-        <div className="relative">
-          <div className="relative">
-            <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none z-10" />
-            <input ref={searchRef} type="text" value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              placeholder="Tìm sản phẩm để thêm..."
-              className="w-full border border-neutral-200 rounded-md pl-10 pr-4 py-2.5 text-sm outline-none focus:border-neutral-400 transition-colors" />
-          </div>
-          {searchResults.length > 0 && (
-            <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border border-neutral-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
-              {searchResults.map((p) => (
-                <button key={p.id} type="button" onMouseDown={() => addProduct(p)}
-                  className="w-full text-left px-4 py-2.5 text-sm hover:bg-neutral-50 border-b border-neutral-50 last:border-0 font-medium">
-                  {p.name}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        <ProductSearchSelect
+          onSelect={addProduct}
+          placeholder="Tìm sản phẩm để thêm..."
+        />
 
         {products.length > 0 && (
           <div className="border border-neutral-200 rounded-lg overflow-hidden">
