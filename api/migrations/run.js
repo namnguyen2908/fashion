@@ -23,7 +23,9 @@ const migrations = [
     '014_simplify_variant_prices.sql',
     '015_add_product_is_active.sql',
     '016_create_warehouse_model.sql',
+    '017_add_warehouse_slug.sql',
     '018_create_procurement_module.sql',
+    '019_add_gr_sync_master_cost.sql',
 ];
 
 try {
