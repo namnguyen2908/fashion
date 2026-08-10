@@ -36,11 +36,11 @@ import {
     deleteSupplierVariant,
     getVariantSuppliers,
     getSuppliersByVariantIds,
+    getSupplierVariantsByVariantIds,
 } from '../controllers/warehouse.controller.js';
 import {
     listGoodsReceipts,
     getGoodsReceiptById,
-    directCreateReceipt,
 } from '../controllers/goodsReceipt.controller.js';
 
 const router = express.Router();
@@ -60,7 +60,6 @@ router.get('/transactions', verifyToken, verifyPermission('warehouse:view'), lis
 router.get('/costs', verifyToken, verifyPermission('warehouse:view'), listCosts);
 
 // Goods receipts — legacy alias (giữ tương thích UI hiện tại)
-router.post('/receipts', verifyToken, verifyPermission('warehouse:create'), directCreateReceipt);
 router.get('/receipts', verifyToken, verifyPermission('warehouse:view'), listGoodsReceipts);
 router.get('/receipts/:id', verifyToken, verifyPermission('warehouse:view'), getGoodsReceiptById);
 
@@ -89,6 +88,7 @@ router.post('/transfers/:id/complete', verifyToken, verifyPermission('warehouse:
 // Suppliers
 router.get('/suppliers', verifyToken, verifyPermission('warehouse:view'), listSuppliers);
 router.get('/suppliers/by-variant', verifyToken, verifyPermission('warehouse:view'), getSuppliersByVariantIds);
+router.get('/supplier-variants/by-ids', verifyToken, verifyPermission('warehouse:view'), getSupplierVariantsByVariantIds);
 router.get('/suppliers/:id', verifyToken, verifyPermission('warehouse:view'), getSupplierById);
 router.post('/suppliers', verifyToken, verifyPermission('warehouse:create'), createSupplier);
 router.put('/suppliers/:id', verifyToken, verifyPermission('warehouse:create'), updateSupplier);
