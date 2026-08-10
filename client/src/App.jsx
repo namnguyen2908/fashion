@@ -79,7 +79,7 @@ function App() {
             <Route path="customers" element={<CustomerList />} />
             <Route path="discounts" element={<DiscountDashboard />} />
             <Route path="warehouse/stocks" element={<WarehouseList />} />
-            <Route path="warehouse/stocks/:warehouseId" element={<StockList />} />
+            <Route path="warehouse/stocks/:warehouseSlug" element={<StockList />} />
             <Route path="warehouse/receipts" element={<ReceiptList />} />
             <Route path="warehouse/receipts/create" element={<CreateReceipt />} />
             <Route path="warehouse/receipts/:id" element={<ReceiptDetail />} />

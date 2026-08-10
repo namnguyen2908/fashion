@@ -4,9 +4,10 @@ import api from "../../../services/api";
 import { IconSpinner, IconSearch, IconChevron } from "../../../components/admin/Icons";
 
 export default function StockList() {
-  const { warehouseId } = useParams();
+  const { warehouseSlug } = useParams();
   const [products, setProducts] = useState([]);
   const [warehouse, setWarehouse] = useState(null);
+  const [warehouseLoaded, setWarehouseLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [expandedId, setExpandedId] = useState(null);
@@ -25,10 +26,14 @@ export default function StockList() {
     api.get("/warehouse/warehouses")
       .then(({ data }) => {
         const list = Array.isArray(data?.data) ? data.data : [];
-        setWarehouse(list.find((w) => String(w.id) === String(warehouseId)) || null);
+        const found = list.find(
+          (w) => String(w.slug) === String(warehouseSlug) || String(w.id) === String(warehouseSlug)
+        );
+        setWarehouse(found || null);
       })
-      .catch(() => {});
-  }, [warehouseId]);
+      .catch(() => {})
+      .finally(() => setWarehouseLoaded(true));
+  }, [warehouseSlug]);
 
   useEffect(() => {
     setPage(1);
@@ -36,7 +41,7 @@ export default function StockList() {
     setSearchInput("");
     setExpandedId(null);
     setVariantStock({});
-  }, [warehouseId]);
+  }, [warehouseSlug]);
 
   const fetchProducts = useCallback(async () => {
     setLoading(true);
@@ -66,11 +71,13 @@ export default function StockList() {
     }
     setExpandedId(productId);
 
+    if (!warehouse) return;
+
     if (!variantStock[productId]) {
       setLoadingVariants((prev) => ({ ...prev, [productId]: true }));
       try {
         const { data } = await api.get(`/warehouse/stocks/product/${productId}`, {
-          params: { warehouse_id: warehouseId }
+          params: { warehouse_id: warehouse.id }
         });
         const stockMap = {};
         (data?.data ?? []).forEach((v) => {
@@ -135,7 +142,15 @@ export default function StockList() {
         <p className="mb-6 text-sm text-red-600 bg-red-50 border border-red-100 rounded-md px-4 py-3">{error}</p>
       )}
 
-      {loading ? (
+      {warehouseLoaded && !warehouse ? (
+        <div className="border border-dashed border-neutral-200 rounded-lg bg-white p-12 text-center">
+          <p className="text-sm text-neutral-500">Không tìm thấy kho.</p>
+          <Link to="/admin/warehouse/stocks"
+            className="inline-block mt-4 text-sm underline underline-offset-4 hover:text-neutral-600">
+            Quay lại danh sách kho
+          </Link>
+        </div>
+      ) : loading ? (
         <div className="flex items-center justify-center py-20 text-neutral-400 gap-2">
           <IconSpinner className="w-5 h-5" />
           <span className="text-sm">Đang tải...</span>

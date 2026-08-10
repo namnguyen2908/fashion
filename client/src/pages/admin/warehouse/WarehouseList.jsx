@@ -169,7 +169,7 @@ export default function WarehouseList() {
                   <tr key={w.id} className="border-t border-neutral-100 hover:bg-neutral-50/80 transition-colors">
                     <td className="px-4 py-3 font-mono text-xs text-neutral-500">{w.code || "—"}</td>
                     <td className="px-4 py-3 font-medium">
-                      <Link to={`/admin/warehouse/stocks/${w.id}`} className="text-neutral-900 hover:underline underline-offset-2">
+                      <Link to={`/admin/warehouse/stocks/${w.slug}`} className="text-neutral-900 hover:underline underline-offset-2">
                         {w.name}
                       </Link>
                     </td>
@@ -184,7 +184,7 @@ export default function WarehouseList() {
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
-                        <Link to={`/admin/warehouse/stocks/${w.id}`}
+                        <Link to={`/admin/warehouse/stocks/${w.slug}`}
                           className="p-1.5 text-neutral-400 hover:text-neutral-900 rounded-md hover:bg-neutral-100 transition-colors"
                           aria-label="Xem tồn kho">
                           <IconEye />
