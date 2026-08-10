@@ -53,7 +53,7 @@ export default function ReceiptList() {
           </p>
         </div>
         <Link
-          to="/admin/warehouse/receipts/create"
+          to="/admin/warehouse/purchase-orders"
           className="inline-flex justify-center px-5 py-2.5 text-sm bg-black text-white rounded-md hover:bg-neutral-800 transition-colors shrink-0"
         >
           Tạo phiếu nhập
@@ -72,9 +72,9 @@ export default function ReceiptList() {
       ) : receipts.length === 0 ? (
         <div className="border border-dashed border-neutral-200 rounded-lg bg-white p-12 text-center">
           <p className="text-sm text-neutral-500">Chưa có phiếu nhập kho nào.</p>
-          <Link to="/admin/warehouse/receipts/create"
+          <Link to="/admin/warehouse/purchase-orders"
             className="inline-block mt-4 text-sm underline underline-offset-4 hover:text-neutral-600">
-            Tạo phiếu nhập đầu tiên
+            Tạo phiếu nhập từ đơn đặt hàng
           </Link>
         </div>
       ) : (

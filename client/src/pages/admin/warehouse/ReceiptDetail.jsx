@@ -149,12 +149,16 @@ export default function ReceiptDetail() {
                 <th className="px-4 py-3 font-medium">Sản phẩm</th>
                 <th className="px-4 py-3 font-medium hidden sm:table-cell">SKU</th>
                 <th className="px-4 py-3 font-medium hidden md:table-cell">Màu / Size</th>
-                <th className="px-4 py-3 font-medium text-right">Số lượng</th>
                 <th className="px-4 py-3 font-medium text-right hidden md:table-cell">Giá nhập</th>
+                <th className="px-4 py-3 font-medium text-right hidden md:table-cell">Giá PO</th>
               </tr>
             </thead>
             <tbody>
-              {receipt.items?.map((item) => (
+              {receipt.items?.map((item) => {
+                const poPrice = Number(item.po_price || 0);
+                const unitCost = Number(item.unit_cost || 0);
+                const differs = poPrice > 0 && unitCost !== poPrice;
+                return (
                 <tr key={item.id} className="border-t border-neutral-100 hover:bg-neutral-50/80 transition-colors">
                   <td className="px-4 py-3 font-medium text-neutral-900">{item.product_name}</td>
                   <td className="px-4 py-3 text-neutral-500 text-xs font-mono hidden sm:table-cell">{item.sku}</td>
@@ -163,10 +167,17 @@ export default function ReceiptDetail() {
                   </td>
                   <td className="px-4 py-3 text-right font-medium">{item.quantity}</td>
                   <td className="px-4 py-3 text-right text-neutral-600 hidden md:table-cell">
-                    {item.unit_cost ? `${Number(item.unit_cost).toLocaleString("vi-VN")}₫` : "—"}
+                    <span className={differs ? "text-amber-600" : ""}>
+                      {item.unit_cost ? `${Number(item.unit_cost).toLocaleString("vi-VN")}₫` : "—"}
+                    </span>
+                    {differs && <span className="block text-[11px] text-amber-600 mt-0.5">Chênh lệch giá PO</span>}
+                  </td>
+                  <td className="px-4 py-3 text-right text-neutral-400 hidden md:table-cell">
+                    {poPrice > 0 ? `${poPrice.toLocaleString("vi-VN")}₫` : "—"}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
