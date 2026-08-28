@@ -90,7 +90,10 @@ export const createPO = async (req, res) => {
         }
     } catch (error) {
         if (error.code === '23505') {
-            return res.status(400).json({ success: false, message: 'Mã đơn đặt hàng bị trùng' });
+            const message = error.constraint === 'purchase_order_items_po_id_variant_id_key'
+                ? 'Sản phẩm bị trùng lặp trong đơn đặt hàng'
+                : 'Mã đơn đặt hàng bị trùng';
+            return res.status(400).json({ success: false, message });
         }
         if (error.code === '23503') {
             return res.status(400).json({ success: false, message: 'Sản phẩm hoặc nhà cung cấp không hợp lệ' });
@@ -227,13 +230,15 @@ export const updatePO = async (req, res) => {
 
             if (items && Array.isArray(items)) {
                 await client.query(`DELETE FROM purchase_order_items WHERE po_id = $1`, [id]);
+                const cur = await client.query(`SELECT supplier_id FROM purchase_orders WHERE id = $1`, [id]);
+                const effSupplierId = supplier_id || cur.rows[0]?.supplier_id;
                 for (const item of items) {
                     if (!item.variant_id || !item.quantity || item.quantity <= 0) {
                         throw new Error('Dữ liệu sản phẩm không hợp lệ');
                     }
                     const unitPrice = item.unit_price != null && Number(item.unit_price) > 0
                         ? Number(item.unit_price)
-                        : await supplierDefaultCost(client, supplier_id, item.variant_id);
+                        : await supplierDefaultCost(client, effSupplierId, item.variant_id);
                     await client.query(`
                         INSERT INTO purchase_order_items (po_id, variant_id, quantity, unit_price)
                         VALUES ($1, $2, $3, $4)
@@ -308,6 +313,96 @@ export const cancelPO = async (req, res) => {
         return res.status(200).json({ success: true, data: result.rows[0] });
     } catch (error) {
         console.error('cancelPO error:', error);
+        return res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+/**
+ * Tạo nhiều đơn đặt hàng cùng lúc, mỗi đơn ứng với một nhà cung cấp.
+ * Body: { warehouse_id, expected_date, notes, groups: [{ supplier_id, items: [{ variant_id, quantity, unit_price }] }] }
+ * Tất cả trong 1 transaction.
+ */
+export const createPOGroup = async (req, res) => {
+    try {
+        const { warehouse_id, expected_date, notes, groups } = req.body;
+
+        if (!warehouse_id) {
+            return res.status(400).json({ success: false, message: 'Kho nhận là bắt buộc' });
+        }
+        if (!groups || !Array.isArray(groups) || groups.length === 0) {
+            return res.status(400).json({ success: false, message: 'Cần ít nhất một nhóm sản phẩm' });
+        }
+
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            try {
+                await ensureActiveWarehouse(client, warehouse_id);
+            } catch (e) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ success: false, message: e.message });
+            }
+
+            const created = [];
+            for (const group of groups) {
+                const { supplier_id, items } = group;
+                if (!supplier_id) {
+                    await client.query('ROLLBACK');
+                    return res.status(400).json({ success: false, message: 'Một nhóm sản phẩm đang thiếu nhà cung cấp' });
+                }
+                try {
+                    await validateItems(items);
+                } catch (e) {
+                    await client.query('ROLLBACK');
+                    return res.status(400).json({ success: false, message: e.message });
+                }
+                try {
+                    await ensureActiveSupplier(client, supplier_id);
+                } catch (e) {
+                    await client.query('ROLLBACK');
+                    return res.status(400).json({ success: false, message: e.message });
+                }
+
+                const poCode = await nextDocCode(client, 'PO');
+                const poResult = await client.query(`
+                    INSERT INTO purchase_orders (po_code, supplier_id, warehouse_id, expected_date, notes, created_by)
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                    RETURNING id, po_code, supplier_id
+                `, [poCode, supplier_id, warehouse_id, expected_date || null, notes || null, req.user.userId]);
+                const poId = poResult.rows[0].id;
+
+                for (const item of items) {
+                    const unitPrice = item.unit_price != null && Number(item.unit_price) > 0
+                        ? Number(item.unit_price)
+                        : await supplierDefaultCost(client, supplier_id, item.variant_id);
+                    await client.query(`
+                        INSERT INTO purchase_order_items (po_id, variant_id, quantity, unit_price)
+                        VALUES ($1, $2, $3, $4)
+                    `, [poId, item.variant_id, item.quantity, unitPrice]);
+                }
+                created.push(poResult.rows[0]);
+            }
+
+            await client.query('COMMIT');
+            return res.status(201).json({
+                success: true,
+                message: `Đã tạo ${created.length} đơn đặt hàng`,
+                data: created,
+            });
+        } catch (e) {
+            await client.query('ROLLBACK');
+            if (e.code === '23505') {
+                return res.status(400).json({ success: false, message: 'Sản phẩm bị trùng lặp trong một đơn' });
+            }
+            throw e;
+        } finally {
+            client.release();
+        }
+    } catch (error) {
+        if (error.code === '23503') {
+            return res.status(400).json({ success: false, message: 'Sản phẩm hoặc nhà cung cấp không hợp lệ' });
+        }
+        console.error('createPOGroup error:', error);
         return res.status(500).json({ success: false, message: 'Server error' });
     }
 };

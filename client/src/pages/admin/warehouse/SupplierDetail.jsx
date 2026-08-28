@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
 import api from "../../../services/api";
-import { IconSpinner, IconTrash } from "../../../components/admin/Icons";
+import { IconSpinner, IconTrash, IconChevron } from "../../../components/admin/Icons";
 import ProductSearchSelect from "../../../components/admin/ProductSearchSelect";
 
 export default function SupplierDetail() {
@@ -14,6 +14,7 @@ export default function SupplierDetail() {
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [productVariants, setProductVariants] = useState([]);
   const [bulkPrice, setBulkPrice] = useState("");
+  const [expandedProductId, setExpandedProductId] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -24,7 +25,9 @@ export default function SupplierDetail() {
           api.get(`/warehouse/suppliers/${id}/variants`)
         ]);
         setSupplier(sRes?.data?.data ?? null);
-        setVariants(vRes?.data?.data ?? []);
+        const list = vRes?.data?.data ?? [];
+        setVariants(list);
+        if (list.length > 0) setExpandedProductId(list[0].product_id);
       } catch (err) {
         setError(err?.response?.data?.message || "Không thể tải thông tin.");
       } finally {
@@ -111,7 +114,25 @@ export default function SupplierDetail() {
     );
   }
 
-  const alreadyAssigned = new Set(variants.map((v) => v.variant_id));
+  // Tập các product đã có hàng được gán cho nhà cung cấp
+  const alreadyAssigned = new Set(variants.map((v) => v.product_id));
+
+  // Nhóm variants theo product để hiển thị dạng danh sách sản phẩm
+  const groupedProducts = [];
+  {
+    const map = new Map();
+    for (const v of variants) {
+      if (!map.has(v.product_id)) {
+        const p = { product_id: v.product_id, product_name: v.product_name, image_url: v.image_url || null, variants: [] };
+        map.set(v.product_id, p);
+        groupedProducts.push(p);
+      }
+      map.get(v.product_id).variants.push(v);
+    }
+  }
+
+  const toggleProduct = (productId) =>
+    setExpandedProductId((cur) => (cur === productId ? null : productId));
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10 w-full">
@@ -233,43 +254,74 @@ export default function SupplierDetail() {
             <p className="text-sm text-neutral-500">Chưa có mặt hàng nào.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-neutral-50 text-left text-xs uppercase tracking-wider text-neutral-500">
-                  <th className="px-6 py-3 font-medium">Sản phẩm</th>
-                  <th className="px-4 py-3 font-medium">SKU</th>
-                  <th className="px-4 py-3 font-medium hidden sm:table-cell">Màu</th>
-                  <th className="px-4 py-3 font-medium hidden sm:table-cell">Size</th>
-                  <th className="px-4 py-3 font-medium text-right">Giá nhập</th>
-                  <th className="px-4 py-3 font-medium text-right">Thao tác</th>
-                </tr>
-              </thead>
-              <tbody>
-                {variants.map((v) => (
-                  <tr key={v.id} className="border-t border-neutral-100 hover:bg-neutral-50/80 transition-colors">
-                    <td className="px-6 py-3 font-medium text-neutral-900">{v.product_name}</td>
-                    <td className="px-4 py-3 text-neutral-500 text-xs font-mono">{v.sku}</td>
-                    <td className="px-4 py-3 text-neutral-600 hidden sm:table-cell">{v.color || "—"}</td>
-                    <td className="px-4 py-3 text-neutral-600 hidden sm:table-cell">{v.size || "—"}</td>
-                    <td className="px-4 py-3 text-right">
-                      <input type="number" value={v.cost_price || ""}
-                        onChange={(e) => handleUpdatePrice(v.variant_id, e.target.value)}
-                        onBlur={(e) => handleUpdatePrice(v.variant_id, e.target.value)}
-                        className="w-24 border border-neutral-200 rounded px-2 py-1 text-sm text-right outline-none focus:border-neutral-400"
-                        placeholder="—"
-                      />
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <button type="button" onClick={() => handleRemove(v.variant_id)}
-                        className="p-1.5 text-neutral-400 hover:text-red-600 rounded-md hover:bg-red-50 transition-colors">
-                        <IconTrash className="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div>
+            {groupedProducts.map((product) => {
+              const isExpanded = expandedProductId === product.product_id;
+              return (
+                <div key={product.product_id} className="border-t border-neutral-100 first:border-t-0">
+                  <button type="button" onClick={() => toggleProduct(product.product_id)}
+                    className="w-full flex items-center justify-between px-6 py-3.5 text-left hover:bg-neutral-50 transition-colors">
+                    <span className="flex items-center gap-3">
+                      <IconChevron expanded={isExpanded} className="w-4 h-4 text-neutral-400 shrink-0" />
+                      {product.image_url ? (
+                        <img src={product.image_url} alt={product.product_name}
+                          className="w-10 h-10 rounded-md object-cover border border-neutral-100" loading="lazy" />
+                      ) : (
+                        <span className="w-10 h-10 rounded-md bg-neutral-100 border border-neutral-100 flex items-center justify-center text-[10px] text-neutral-300">
+                          No img
+                        </span>
+                      )}
+                      <span className="font-medium text-neutral-900">{product.product_name}</span>
+                      <span className="text-xs text-neutral-400">
+                        {product.variants.length} variant{product.variants.length > 1 ? "s" : ""}
+                      </span>
+                    </span>
+                  </button>
+                  {isExpanded && (
+                    <div className="overflow-x-auto border-t border-neutral-100">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="bg-neutral-50/50 text-left text-xs uppercase tracking-wider text-neutral-500">
+                            <th className="px-6 py-2 font-medium">SKU</th>
+                            <th className="px-4 py-2 font-medium hidden sm:table-cell">Màu</th>
+                            <th className="px-4 py-2 font-medium hidden sm:table-cell">Size</th>
+                            <th className="px-4 py-2 font-medium text-right">Giá nhập</th>
+                            <th className="px-4 py-2 font-medium text-right hidden sm:table-cell">Giá cũ</th>
+                            <th className="px-4 py-2 font-medium text-right">Thao tác</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {product.variants.map((v) => (
+                            <tr key={v.id} className="border-t border-neutral-50 hover:bg-neutral-50/50 transition-colors">
+                              <td className="px-6 py-2.5 text-neutral-500 text-xs font-mono">{v.sku}</td>
+                              <td className="px-4 py-2.5 text-neutral-600 hidden sm:table-cell">{v.color || "—"}</td>
+                              <td className="px-4 py-2.5 text-neutral-600 hidden sm:table-cell">{v.size || "—"}</td>
+                              <td className="px-4 py-2.5 text-right">
+                                <input type="number" value={v.cost_price || ""}
+                                  onChange={(e) => handleUpdatePrice(v.variant_id, e.target.value)}
+                                  onBlur={(e) => handleUpdatePrice(v.variant_id, e.target.value)}
+                                  className="w-24 border border-neutral-200 rounded px-2 py-1 text-sm text-right outline-none focus:border-neutral-400"
+                                  placeholder="—"
+                                />
+                              </td>
+                              <td className="px-4 py-2.5 text-right text-neutral-400 hidden sm:table-cell">
+                                {v.previous_cost_price ? `${Number(v.previous_cost_price).toLocaleString("vi-VN")}₫` : "—"}
+                              </td>
+                              <td className="px-4 py-2.5 text-right">
+                                <button type="button" onClick={() => handleRemove(v.variant_id)}
+                                  className="p-1.5 text-neutral-400 hover:text-red-600 rounded-md hover:bg-red-50 transition-colors">
+                                  <IconTrash className="w-4 h-4" />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

@@ -1,5 +1,6 @@
 import pool from '../config/db.js';
 import { applyStockChange, transferStock, nextDocCode } from '../utils/stock.js';
+import { generateSlug } from '../utils/slugify.js';
 
 function priceSubquery(alias = 'pv') {
     return `COALESCE((SELECT price FROM variant_prices WHERE variant_id = ${alias}.id), 0) AS price`;
@@ -55,16 +56,19 @@ export const createWarehouse = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Tên kho là bắt buộc' });
         }
         const warehouseCode = code || `KHO-${Date.now()}`;
+        const baseSlug = generateSlug(name.trim()) || `kho-${Date.now()}`;
+        const existing = await pool.query(`SELECT slug FROM warehouses WHERE slug LIKE $1`, [`${baseSlug}%`]);
+        const slug = existing.rows.length > 0 ? `${baseSlug}-${existing.rows.length + 1}` : baseSlug;
         const result = await pool.query(`
-            INSERT INTO warehouses (name, code, location)
-            VALUES ($1, $2, $3)
+            INSERT INTO warehouses (name, code, slug, location)
+            VALUES ($1, $2, $3, $4)
             RETURNING *
-        `, [name.trim(), warehouseCode, location || null]);
+        `, [name.trim(), warehouseCode, slug, location || null]);
 
         return res.status(201).json({ success: true, data: result.rows[0] });
     } catch (error) {
         if (error.code === '23505') {
-            return res.status(400).json({ success: false, message: 'Mã kho đã tồn tại' });
+            return res.status(400).json({ success: false, message: 'Mã kho hoặc slug đã tồn tại' });
         }
         console.error('createWarehouse error:', error);
         return res.status(500).json({ success: false, message: 'Server error' });
@@ -81,20 +85,28 @@ export const updateWarehouse = async (req, res) => {
             return res.status(404).json({ success: false, message: 'Không tìm thấy kho' });
         }
 
+        let slug = null;
+        if (name) {
+            const baseSlug = generateSlug(name.trim()) || `kho-${Date.now()}`;
+            const conflict = await pool.query(`SELECT id FROM warehouses WHERE slug = $1 AND id != $2`, [baseSlug, id]);
+            slug = conflict.rows.length > 0 ? `${baseSlug}-${Date.now()}` : baseSlug;
+        }
+
         const result = await pool.query(`
             UPDATE warehouses SET
                 name = COALESCE($1, name),
                 code = COALESCE($2, code),
-                location = COALESCE($3, location),
-                is_active = COALESCE($4, is_active)
-            WHERE id = $5
+                slug = COALESCE($3, slug),
+                location = COALESCE($4, location),
+                is_active = COALESCE($5, is_active)
+            WHERE id = $6
             RETURNING *
-        `, [name || null, code || null, location ?? null, is_active ?? null, id]);
+        `, [name || null, code || null, slug, location ?? null, is_active ?? null, id]);
 
         return res.status(200).json({ success: true, data: result.rows[0] });
     } catch (error) {
         if (error.code === '23505') {
-            return res.status(400).json({ success: false, message: 'Mã kho đã tồn tại' });
+            return res.status(400).json({ success: false, message: 'Mã kho hoặc slug đã tồn tại' });
         }
         console.error('updateWarehouse error:', error);
         return res.status(500).json({ success: false, message: 'Server error' });
@@ -1218,7 +1230,10 @@ export const getSupplierVariants = async (req, res) => {
         const result = await pool.query(`
             SELECT sv.id, sv.variant_id, sv.cost_price, sv.previous_cost_price, sv.updated_at,
                    pv.sku, pv.color, pv.size, ${priceSubquery()},
-                   p.name AS product_name, p.id AS product_id
+                   p.name AS product_name, p.id AS product_id,
+                   COALESCE((SELECT pi.image_url FROM product_images pi
+                             WHERE pi.product_id = p.id
+                             ORDER BY pi.is_thumbnail DESC, pi.sort_order ASC, pi.id ASC LIMIT 1), NULL) AS image_url
             FROM supplier_variants sv
             JOIN product_variants pv ON sv.variant_id = pv.id
             JOIN products p ON pv.product_id = p.id
@@ -1253,14 +1268,16 @@ export const addSupplierVariant = async (req, res) => {
 
         let result;
         if (existing.rows.length > 0) {
+            const newCost = cost_price != null ? Number(cost_price) : null;
+            const oldCost = existing.rows[0].cost_price != null ? Number(existing.rows[0].cost_price) : null;
             result = await pool.query(`
                 UPDATE supplier_variants SET
-                    previous_cost_price = cost_price,
-                    cost_price = COALESCE($1, cost_price),
+                    previous_cost_price = $1,
+                    cost_price = COALESCE($2, cost_price),
                     updated_at = NOW()
-                WHERE id = $2
+                WHERE id = $3
                 RETURNING *
-            `, [cost_price || null, existing.rows[0].id]);
+            `, [oldCost, newCost, existing.rows[0].id]);
         } else {
             result = await pool.query(`
                 INSERT INTO supplier_variants (supplier_id, variant_id, cost_price)
@@ -1281,18 +1298,24 @@ export const updateSupplierVariant = async (req, res) => {
         const { id, variantId } = req.params;
         const { cost_price } = req.body;
 
-        const result = await pool.query(`
-            UPDATE supplier_variants SET
-                previous_cost_price = cost_price,
-                cost_price = $1,
-                updated_at = NOW()
-            WHERE supplier_id = $2 AND variant_id = $3
-            RETURNING *
-        `, [cost_price || null, id, variantId]);
-
-        if (result.rows.length === 0) {
+        const existing = await pool.query(
+            `SELECT cost_price FROM supplier_variants WHERE supplier_id = $1 AND variant_id = $2`,
+            [id, variantId]
+        );
+        if (existing.rows.length === 0) {
             return res.status(404).json({ success: false, message: 'Không tìm thấy giá nhà cung cấp' });
         }
+
+        const newCost = cost_price != null ? Number(cost_price) : null;
+        const oldCost = existing.rows[0].cost_price != null ? Number(existing.rows[0].cost_price) : null;
+        const result = await pool.query(`
+            UPDATE supplier_variants SET
+                previous_cost_price = $1,
+                cost_price = $2,
+                updated_at = NOW()
+            WHERE supplier_id = $3 AND variant_id = $4
+            RETURNING *
+        `, [oldCost, newCost, id, variantId]);
 
         return res.status(200).json({ success: true, data: result.rows[0] });
     } catch (error) {
@@ -1357,6 +1380,37 @@ export const getSuppliersByVariantIds = async (req, res) => {
         return res.status(200).json({ success: true, data: result.rows });
     } catch (error) {
         console.error('getSuppliersByVariantIds error:', error);
+        return res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+/**
+ * Trả về (supplier + cost_price) cho từng variant trong danh sách ids.
+ * Dùng cho bảng đặt hàng: mỗi dòng variant cần danh sách NCC có cung cấp
+ * kèm giá để prefill dropdown + giá.
+ */
+export const getSupplierVariantsByVariantIds = async (req, res) => {
+    try {
+        const { ids } = req.query;
+        if (!ids) {
+            return res.status(400).json({ success: false, message: 'Thiếu tham số ids' });
+        }
+        const variantIds = ids.split(',').map(Number).filter(Boolean);
+        if (variantIds.length === 0) {
+            return res.status(200).json({ success: true, data: [] });
+        }
+
+        const result = await pool.query(`
+            SELECT sv.variant_id, sv.cost_price,
+                   s.id AS supplier_id, s.name AS supplier_name
+            FROM supplier_variants sv
+            JOIN suppliers s ON sv.supplier_id = s.id
+            WHERE sv.variant_id = ANY($1) AND s.is_active = true
+            ORDER BY s.name, sv.cost_price ASC NULLS LAST
+        `, [variantIds]);
+        return res.status(200).json({ success: true, data: result.rows });
+    } catch (error) {
+        console.error('getSupplierVariantsByVariantIds error:', error);
         return res.status(500).json({ success: false, message: 'Server error' });
     }
 };

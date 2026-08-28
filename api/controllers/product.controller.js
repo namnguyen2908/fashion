@@ -25,7 +25,8 @@ export const getProducts = async (req, res) => {
             limit = 10,
             search = '',
             category,
-            show_all
+            show_all,
+            warehouse_id
         } = req.query;
 
         const currentPage = Math.max(Number(page), 1);
@@ -40,7 +41,7 @@ export const getProducts = async (req, res) => {
         const version = await getCacheVersion('products:version', 1);
 
         const cacheKey =
-            `products:v${version}:page=${currentPage}:limit=${pageLimit}:search=${search}:category=${category || 'all'}`;
+            `products:v${version}:page=${currentPage}:limit=${pageLimit}:search=${search}:category=${category || 'all'}:wh=${warehouse_id || 'all'}`;
 
         const cachedProducts = await getCache(cacheKey);
 
@@ -50,6 +51,33 @@ export const getProducts = async (req, res) => {
                 ...cachedProducts
             });
         }
+
+        const values = [];
+        const where = [];
+
+        if (warehouse_id && /^\d+$/.test(String(warehouse_id))) {
+            values.push(Number(warehouse_id));
+        }
+
+        if (search) {
+            values.push(`%${search}%`);
+            where.push(`p.name ILIKE $${values.length}`);
+        }
+
+        if (!show_all) {
+            where.push(`p.is_active = true`);
+        }
+
+        if (category) {
+            values.push(category);
+            where.push(`p.category_id = $${values.length}`);
+        }
+
+        const totalStockExpr = values.length
+            ? `(SELECT COALESCE(SUM(ib.on_hand), 0) FROM inventory_balances ib
+                JOIN product_variants pv ON pv.id = ib.variant_id
+                WHERE pv.product_id = p.id AND ib.warehouse_id = $1)`
+            : `0`;
 
         let query = `
             SELECT
@@ -63,6 +91,15 @@ export const getProducts = async (req, res) => {
                 c.name AS category_name,
                 (SELECT COUNT(*) FROM product_variants pv WHERE pv.product_id = p.id) AS variant_count,
                 (SELECT COUNT(*) FROM product_images pi WHERE pi.product_id = p.id) AS image_count,
+                COALESCE(
+                    (SELECT pi.image_url FROM product_images pi
+                     WHERE pi.product_id = p.id AND pi.is_thumbnail = true
+                     ORDER BY pi.sort_order ASC, pi.id ASC LIMIT 1),
+                    (SELECT pi.image_url FROM product_images pi
+                     WHERE pi.product_id = p.id
+                     ORDER BY pi.sort_order ASC, pi.id ASC LIMIT 1)
+                ) AS image_url,
+                ${totalStockExpr} AS total_stock,
                 (SELECT COALESCE(jsonb_agg(jsonb_build_object(
                     'id', pv.id,
                     'color', pv.color,
@@ -76,23 +113,10 @@ export const getProducts = async (req, res) => {
             FROM products p
             LEFT JOIN categories c
             ON p.category_id = c.id
-            WHERE 1=1
         `;
 
-        const values = [];
-
-        if (search) {
-            values.push(`%${search}%`);
-            query += ` AND p.name ILIKE $${values.length}`;
-        }
-
-        if (!show_all) {
-            query += ` AND p.is_active = true`;
-        }
-
-        if (category) {
-            values.push(category);
-            query += ` AND p.category_id = $${values.length}`;
+        if (where.length) {
+            query += ` WHERE ${where.join(' AND ')}`;
         }
 
         values.push(pageLimit);

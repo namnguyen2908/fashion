@@ -31,25 +31,71 @@ async function recomputePOStatus(client, poId) {
     }
 }
 
-/** Ghi sổ một GR đã ở trạng thái COMPLETED (dùng cho complete + direct create). Chạy trong transaction. */
+/**
+ * Tổng số lượng đang nằm ở các GR DRAFT khác (chưa ghi sổ) của cùng po_item.
+ * Dùng để chặn nhận vượt đơn khi tồn tại nhiều phiếu nhập nháp cho một PO.
+ * excludeGrId: loại trừ chính phiếu đang được sửa.
+ */
+async function getPendingForPoItem(client, poItemId, excludeGrId = null) {
+    const r = await client.query(`
+        SELECT COALESCE(SUM(gri.quantity), 0)::int AS pending
+        FROM goods_receipt_items gri
+        JOIN goods_receipts gr ON gri.goods_receipt_id = gr.id
+        WHERE gri.po_item_id = $1
+          AND gr.status = 'DRAFT'
+          AND gr.id <> COALESCE($2, -1)
+    `, [poItemId, excludeGrId || null]);
+    return Number(r.rows[0].pending);
+}
+
+/**
+ * Cập nhật giá master của nhà cung cấp theo giá nhập thực tế,
+ * giữ lại previous_cost_price = giá cũ. Chạy trong transaction.
+ * Bỏ qua nếu variant chưa được gán cho nhà cung cấp hoặc giá mới <= 0.
+ */
+async function updateSupplierMasterCost(client, supplierId, variantId, newCost) {
+    if (!newCost || newCost <= 0) return;
+    const sv = await client.query(
+        `SELECT id, cost_price FROM supplier_variants
+         WHERE supplier_id = $1 AND variant_id = $2 FOR UPDATE`,
+        [supplierId, variantId]
+    );
+    if (sv.rows.length === 0) return;
+    const oldCost = sv.rows[0].cost_price != null ? Number(sv.rows[0].cost_price) : null;
+    await client.query(`
+        UPDATE supplier_variants SET
+            previous_cost_price = $1,
+            cost_price = $2,
+            updated_at = NOW()
+        WHERE id = $3
+    `, [oldCost, newCost, sv.rows[0].id]);
+}
+
+/** Ghi sổ một GR đã ở trạng thái COMPLETED. Chạy trong transaction. */
 async function postGoodsReceipt(client, grId, grCode, createdBy) {
     const gr = await client.query(
-        `SELECT warehouse_id, po_id FROM goods_receipts WHERE id = $1`, [grId]
+        `SELECT warehouse_id, po_id, supplier_id FROM goods_receipts WHERE id = $1`, [grId]
     );
     const warehouseId = gr.rows[0].warehouse_id;
+    const supplierId = gr.rows[0].supplier_id;
 
     const items = await client.query(
-        `SELECT id, po_item_id, variant_id, quantity, unit_cost FROM goods_receipt_items WHERE goods_receipt_id = $1 ORDER BY id`,
+        `SELECT id, po_item_id, variant_id, quantity, unit_cost, sync_master_cost
+         FROM goods_receipt_items WHERE goods_receipt_id = $1 ORDER BY id`,
         [grId]
     );
 
     for (const item of items.rows) {
         const unitCost = item.unit_cost != null ? Number(item.unit_cost) : 0;
-        const { qty_before } = await applyStockChange(client, {
+        await applyStockChange(client, {
             warehouseId, variantId: item.variant_id, qtyChange: item.quantity,
             refType: 'GOODS_RECEIPT', refId: grId, unitCost, createdBy, note: grCode,
         });
-        await updateVariantCost(client, item.variant_id, qty_before, item.quantity, unitCost);
+        await updateVariantCost(client, item.variant_id, item.quantity, unitCost);
+
+        if (supplierId && item.sync_master_cost) {
+            await updateSupplierMasterCost(client, supplierId, item.variant_id, unitCost);
+        }
 
         if (item.po_item_id) {
             try {
@@ -75,8 +121,11 @@ async function postGoodsReceipt(client, grId, grCode, createdBy) {
 // =========================================
 export const createGoodsReceipt = async (req, res) => {
     try {
-        const { po_id, supplier_id, warehouse_id, receipt_date, notes, items } = req.body;
+        const { po_id, warehouse_id, receipt_date, notes, items } = req.body;
 
+        if (!po_id) {
+            return res.status(400).json({ success: false, message: 'Phiếu nhập phải được tạo từ đơn đặt hàng' });
+        }
         if (!warehouse_id) {
             return res.status(400).json({ success: false, message: 'Kho nhận là bắt buộc' });
         }
@@ -100,79 +149,66 @@ export const createGoodsReceipt = async (req, res) => {
                 return res.status(400).json({ success: false, message: e.message });
             }
 
-            let grSupplierId = supplier_id || null;
-            let grWarehouseId = warehouse_id;
-            let poItemMap = null;
-
-            if (po_id) {
-                const po = await client.query(
-                    `SELECT id, supplier_id, warehouse_id, status FROM purchase_orders WHERE id = $1`, [po_id]
-                );
-                if (po.rows.length === 0) {
-                    await client.query('ROLLBACK');
-                    return res.status(400).json({ success: false, message: 'Không tìm thấy đơn đặt hàng' });
-                }
-                if (po.rows[0].status !== 'CONFIRMED') {
-                    await client.query('ROLLBACK');
-                    return res.status(400).json({ success: false, message: 'Đơn đặt hàng chưa ở trạng thái CONFIRMED' });
-                }
-                if (Number(po.rows[0].warehouse_id) !== Number(warehouse_id)) {
-                    await client.query('ROLLBACK');
-                    return res.status(400).json({ success: false, message: 'Kho nhận phải trùng kho của đơn đặt hàng' });
-                }
-                grSupplierId = po.rows[0].supplier_id;
-                grWarehouseId = po.rows[0].warehouse_id;
-
-                const poi = await client.query(
-                    `SELECT id, variant_id, quantity, received_qty FROM purchase_order_items WHERE po_id = $1`, [po_id]
-                );
-                poItemMap = {};
-                poi.rows.forEach((r) => { poItemMap[String(r.variant_id)] = r; });
+            const po = await client.query(
+                `SELECT id, supplier_id, warehouse_id, status FROM purchase_orders WHERE id = $1`, [po_id]
+            );
+            if (po.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ success: false, message: 'Không tìm thấy đơn đặt hàng' });
             }
+            if (po.rows[0].status !== 'CONFIRMED') {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ success: false, message: 'Đơn đặt hàng chưa ở trạng thái CONFIRMED' });
+            }
+            if (Number(po.rows[0].warehouse_id) !== Number(warehouse_id)) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ success: false, message: 'Kho nhận phải trùng kho của đơn đặt hàng' });
+            }
+            const grSupplierId = po.rows[0].supplier_id;
+            const grWarehouseId = po.rows[0].warehouse_id;
+
+            const poi = await client.query(
+                `SELECT id, variant_id, quantity, received_qty FROM purchase_order_items WHERE po_id = $1`, [po_id]
+            );
+            const poItemMap = {};
+            poi.rows.forEach((r) => { poItemMap[String(r.variant_id)] = r; });
 
             const grCode = await nextDocCode(client, 'PN');
             const grResult = await client.query(`
                 INSERT INTO goods_receipts (receipt_code, po_id, supplier_id, warehouse_id, receipt_date, notes, created_by, status)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, 'DRAFT')
                 RETURNING id, receipt_code
-            `, [grCode, po_id || null, grSupplierId, grWarehouseId, receipt_date || null, notes || null, req.user.userId]);
+            `, [grCode, po_id, grSupplierId, grWarehouseId, receipt_date || null, notes || null, req.user.userId]);
 
             const grId = grResult.rows[0].id;
 
             for (const item of items) {
-                let poItemId = item.po_item_id || null;
+                const poiRow = poItemMap[String(item.variant_id)];
+                if (!poiRow) {
+                    await client.query('ROLLBACK');
+                    return res.status(400).json({ success: false, message: 'Sản phẩm không nằm trong đơn đặt hàng' });
+                }
+                const pending = await getPendingForPoItem(client, poiRow.id);
+                const remaining = Number(poiRow.quantity) - Number(poiRow.received_qty) - pending;
+                if (item.quantity > remaining) {
+                    await client.query('ROLLBACK');
+                    return res.status(400).json({
+                        success: false,
+                        message: `Số lượng nhận vượt quá số còn thiếu (còn ${remaining})`,
+                    });
+                }
                 let unitCost = item.unit_cost != null ? Number(item.unit_cost) : 0;
-
-                if (poItemMap) {
-                    const poi = poItemMap[String(item.variant_id)];
-                    if (!poi) {
-                        await client.query('ROLLBACK');
-                        return res.status(400).json({
-                            success: false,
-                            message: 'Sản phẩm không nằm trong đơn đặt hàng',
-                        });
-                    }
-                    poItemId = poi.id;
-                    const remaining = Number(poi.quantity) - Number(poi.received_qty);
-                    if (item.quantity > remaining) {
-                        await client.query('ROLLBACK');
-                        return res.status(400).json({
-                            success: false,
-                            message: `Số lượng nhận vượt quá số còn thiếu (còn ${remaining})`,
-                        });
-                    }
-                    if (unitCost === 0) {
-                        const pr = await client.query(
-                            `SELECT unit_price FROM purchase_order_items WHERE id = $1`, [poi.id]
-                        );
-                        unitCost = pr.rows.length > 0 ? Number(pr.rows[0].unit_price) : 0;
-                    }
+                if (unitCost === 0) {
+                    const pr = await client.query(
+                        `SELECT unit_price FROM purchase_order_items WHERE id = $1`, [poiRow.id]
+                    );
+                    unitCost = pr.rows.length > 0 ? Number(pr.rows[0].unit_price) : 0;
                 }
 
                 await client.query(`
-                    INSERT INTO goods_receipt_items (goods_receipt_id, po_item_id, variant_id, quantity, unit_cost)
-                    VALUES ($1, $2, $3, $4, $5)
-                `, [grId, poItemId, item.variant_id, item.quantity, unitCost]);
+                    INSERT INTO goods_receipt_items (goods_receipt_id, po_item_id, variant_id, quantity, unit_cost, sync_master_cost)
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                `, [grId, poiRow.id, item.variant_id, item.quantity, unitCost, !!item.sync_master_cost]);
             }
 
             await client.query('COMMIT');
@@ -247,12 +283,14 @@ export const getGoodsReceiptById = async (req, res) => {
         }
 
         const details = await pool.query(`
-            SELECT gri.id, gri.variant_id, gri.quantity, gri.unit_cost, gri.po_item_id, gri.created_at,
+            SELECT gri.id, gri.variant_id, gri.quantity, gri.unit_cost, gri.po_item_id, gri.sync_master_cost, gri.created_at,
                    pv.sku, pv.color, pv.size, ${priceSubquery()},
-                   p.name AS product_name, p.id AS product_id
+                   p.name AS product_name, p.id AS product_id,
+                   COALESCE(poi.unit_price, 0) AS po_price
             FROM goods_receipt_items gri
             JOIN product_variants pv ON gri.variant_id = pv.id
             JOIN products p ON pv.product_id = p.id
+            LEFT JOIN purchase_order_items poi ON gri.po_item_id = poi.id
             WHERE gri.goods_receipt_id = $1
             ORDER BY p.name, pv.color, pv.size
         `, [id]);
@@ -313,7 +351,8 @@ export const updateGoodsReceipt = async (req, res) => {
                         const poi = poItemMap[String(item.variant_id)];
                         if (!poi) throw new Error('Sản phẩm không nằm trong đơn đặt hàng');
                         poItemId = poi.id;
-                        const remaining = Number(poi.quantity) - Number(poi.received_qty);
+                        const pending = await getPendingForPoItem(client, poi.id, id);
+                        const remaining = Number(poi.quantity) - Number(poi.received_qty) - pending;
                         if (item.quantity > remaining) {
                             throw new Error(`Số lượng nhận vượt quá số còn thiếu (còn ${remaining})`);
                         }
@@ -325,9 +364,9 @@ export const updateGoodsReceipt = async (req, res) => {
                         }
                     }
                     await client.query(`
-                        INSERT INTO goods_receipt_items (goods_receipt_id, po_item_id, variant_id, quantity, unit_cost)
-                        VALUES ($1, $2, $3, $4, $5)
-                    `, [id, poItemId, item.variant_id, item.quantity, unitCost]);
+                        INSERT INTO goods_receipt_items (goods_receipt_id, po_item_id, variant_id, quantity, unit_cost, sync_master_cost)
+                        VALUES ($1, $2, $3, $4, $5, $6)
+                    `, [id, poItemId, item.variant_id, item.quantity, unitCost, !!item.sync_master_cost]);
                 }
             }
 
@@ -481,69 +520,6 @@ export const cancelGoodsReceipt = async (req, res) => {
         }
     } catch (error) {
         console.error('cancelGoodsReceipt error:', error);
-        return res.status(500).json({ success: false, message: 'Server error' });
-    }
-};
-
-/** Legacy: tạo + ghi sổ ngay (giữ tương thích cho phiếu nhập không qua PO). */
-export const directCreateReceipt = async (req, res) => {
-    try {
-        const { warehouse_id, supplier_id, notes, items } = req.body;
-
-        if (!warehouse_id) {
-            return res.status(400).json({ success: false, message: 'Kho nhận là bắt buộc' });
-        }
-        if (!items || !Array.isArray(items) || items.length === 0) {
-            return res.status(400).json({ success: false, message: 'Cần ít nhất một sản phẩm' });
-        }
-        for (const item of items) {
-            if (!item.variant_id || !item.quantity || item.quantity <= 0) {
-                return res.status(400).json({ success: false, message: 'Dữ liệu sản phẩm không hợp lệ' });
-            }
-        }
-
-        const client = await pool.connect();
-        try {
-            await client.query('BEGIN');
-            try {
-                await ensureActiveWarehouse(client, warehouse_id);
-            } catch (e) {
-                await client.query('ROLLBACK');
-                return res.status(400).json({ success: false, message: e.message });
-            }
-
-            const grCode = await nextDocCode(client, 'PN');
-            const grResult = await client.query(`
-                INSERT INTO goods_receipts (receipt_code, po_id, supplier_id, warehouse_id, notes, created_by, status)
-                VALUES ($1, NULL, $2, $3, $4, $5, 'DRAFT')
-                RETURNING id, receipt_code
-            `, [grCode, supplier_id || null, warehouse_id, notes || null, req.user.userId]);
-            const grId = grResult.rows[0].id;
-
-            for (const item of items) {
-                await client.query(`
-                    INSERT INTO goods_receipt_items (goods_receipt_id, po_item_id, variant_id, quantity, unit_cost)
-                    VALUES ($1, NULL, $2, $3, $4)
-                `, [grId, item.variant_id, item.quantity, item.unit_cost != null ? Number(item.unit_cost) : 0]);
-            }
-
-            await postGoodsReceipt(client, grId, grCode, req.user.userId);
-            await client.query(`UPDATE goods_receipts SET status = 'COMPLETED' WHERE id = $1`, [grId]);
-            await client.query('COMMIT');
-
-            return res.status(201).json({
-                success: true,
-                message: 'Đã nhập kho thành công',
-                data: { id: grId, receipt_code: grCode, status: 'COMPLETED' }
-            });
-        } catch (e) {
-            await client.query('ROLLBACK');
-            throw e;
-        } finally {
-            client.release();
-        }
-    } catch (error) {
-        console.error('directCreateReceipt error:', error);
         return res.status(500).json({ success: false, message: 'Server error' });
     }
 };

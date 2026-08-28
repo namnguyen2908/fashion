@@ -98,16 +98,29 @@ export async function getVariantOnHand(client, warehouseId, variantId) {
 
 /**
  * Cập nhật giá vốn weighted average cho variant sau khi nhập kho.
- * onHandOld = tồn hệ thống trước khi nhập lô này (giá trị lấy từ applyStockChange.qty_before).
- * Công thức: new_cost = (onHandOld × current + qty × unitCost) / (onHandOld + qty).
+ * Tồn tính trên TOÀN HỆ THỐNG (tổng on_hand mọi kho) theo thiết kế design.md §4.2,
+ * không phải tồn riêng của kho nhận.
+ * qty = số lượng lô vừa nhập; hàm phải được gọi SAU applyStockChange.
+ * Công thức: new_cost = (onHandOld × current + qty × unitCost) / (onHandOld + qty)
+ *            với onHandOld = tổng on_hand hệ thống trước nhập = tổng sau − qty.
  */
-export async function updateVariantCost(client, variantId, onHandOld, qty, unitCost) {
+export async function updateVariantCost(client, variantId, qty, unitCost) {
     const costRes = await client.query(
         `SELECT current_cost FROM inventory_costs WHERE variant_id = $1 FOR UPDATE`, [variantId]
     );
     const current = costRes.rows.length > 0 ? Number(costRes.rows[0].current_cost) : 0;
 
-    const totalQty = onHandOld + qty;
+    await client.query(
+        `SELECT id FROM inventory_balances WHERE variant_id = $1 FOR UPDATE`, [variantId]
+    );
+    const balRes = await client.query(
+        `SELECT COALESCE(SUM(on_hand), 0)::int AS total FROM inventory_balances WHERE variant_id = $1`,
+        [variantId]
+    );
+    const onHandAfter = Number(balRes.rows[0].total);
+    const onHandOld = onHandAfter - qty;
+
+    const totalQty = onHandAfter;
     let newCost = unitCost || 0;
     if (totalQty > 0 && current > 0) {
         newCost = (onHandOld * current + qty * (unitCost || 0)) / totalQty;

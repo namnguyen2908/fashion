@@ -1,8 +1,12 @@
 import { useState, useEffect } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import api from "../../../services/api";
-import { IconSpinner, IconTrash } from "../../../components/admin/Icons";
-import ProductSearchSelect from "../../../components/admin/ProductSearchSelect";
+import { IconSpinner } from "../../../components/admin/Icons";
+
+const formatMoney = (value) => {
+  const n = Number(value);
+  return isNaN(n) || n === 0 ? "—" : n.toLocaleString("vi-VN");
+};
 
 export default function CreateReceipt() {
   const navigate = useNavigate();
@@ -10,52 +14,36 @@ export default function CreateReceipt() {
   const poId = searchParams.get("po_id");
 
   const [loading, setLoading] = useState(!!poId);
-  const [suppliers, setSuppliers] = useState([]);
-  const [warehouses, setWarehouses] = useState([]);
-  const [supplierId, setSupplierId] = useState("");
-  const [warehouseId, setWarehouseId] = useState("");
+  const [error, setError] = useState("");
+  const [po, setPo] = useState(null);
+  const [supplierPrices, setSupplierPrices] = useState({});
   const [receiptDate, setReceiptDate] = useState("");
   const [notes, setNotes] = useState("");
-  const [supplierPrices, setSupplierPrices] = useState({});
   const [products, setProducts] = useState([]);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState("");
 
-  useEffect(() => {
-    api.get("/warehouse/suppliers", { params: { active: "true" } })
-      .then(({ data }) => setSuppliers(Array.isArray(data?.data) ? data.data : []))
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    api.get("/warehouse/warehouses", { params: { active: "true" } })
-      .then(({ data }) => setWarehouses(Array.isArray(data?.data) ? data.data : []))
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    if (!supplierId) { setSupplierPrices({}); return; }
-    api.get(`/warehouse/suppliers/${supplierId}/variants`)
-      .then(({ data }) => {
-        const map = {};
-        (data?.data ?? []).forEach((v) => { map[v.variant_id] = v.cost_price; });
-        setSupplierPrices(map);
-      })
-      .catch(() => setSupplierPrices({}));
-  }, [supplierId]);
-
-  // Nếu vào từ PO: tải đơn, khoá nhà cung cấp/kho, prefill sản phẩm từ PO
+  // Phiếu nhập luôn được tạo từ một PO đã xác nhận
   useEffect(() => {
     if (!poId) return;
     (async () => {
       try {
         const { data } = await api.get(`/purchase-orders/${poId}`);
-        const po = data?.data;
-        if (!po) return;
-        setSupplierId(String(po.supplier_id));
-        setWarehouseId(String(po.warehouse_id));
+        const poData = data?.data;
+        if (!poData) throw new Error("Không tìm thấy đơn đặt hàng.");
+        setPo(poData);
+
+        if (poData.supplier_id) {
+          api.get(`/warehouse/suppliers/${poData.supplier_id}/variants`)
+            .then(({ data: s }) => {
+              const map = {};
+              (s?.data ?? []).forEach((v) => { map[v.variant_id] = v.cost_price; });
+              setSupplierPrices(map);
+            })
+            .catch(() => {});
+        }
+
         const grouped = {};
-        (po.items ?? []).forEach((item) => {
+        (poData.items ?? []).forEach((item) => {
           if (item.remaining <= 0) return;
           if (!grouped[item.product_id]) {
             grouped[item.product_id] = { id: item.product_id, name: item.product_name, variants: [] };
@@ -67,32 +55,19 @@ export default function CreateReceipt() {
             color: item.color,
             size: item.size,
             quantity: String(item.remaining),
-            unit_cost: item.unit_price ? String(item.unit_price) : ""
+            po_price: item.unit_price || 0,
+            unit_cost: item.unit_price ? String(item.unit_price) : "",
+            sync_master_cost: false
           });
         });
         setProducts(Object.values(grouped));
       } catch (err) {
-        setError(err?.response?.data?.message || "Không thể tải đơn đặt hàng.");
+        setError(err?.response?.data?.message || err?.message || "Không thể tải đơn đặt hàng.");
       } finally {
         setLoading(false);
       }
     })();
   }, [poId]);
-
-  const addProduct = async (product) => {
-    try {
-      const { data } = await api.get(`/warehouse/stocks/product/${product.id}`);
-      const variants = (data?.data ?? []).map((v) => ({
-        ...v,
-        quantity: "",
-        unit_cost: supplierPrices[v.variant_id] ? Number(supplierPrices[v.variant_id]) : ""
-      }));
-      if (variants.length === 0) return;
-      setProducts((prev) => [...prev, { ...product, variants }]);
-    } catch { }
-  };
-
-  const removeProduct = (idx) => setProducts((prev) => prev.filter((_, i) => i !== idx));
 
   const updateVariant = (pIdx, vIdx, field, value) => {
     setProducts((prev) => {
@@ -107,16 +82,13 @@ export default function CreateReceipt() {
     e.preventDefault();
     setError("");
 
-    if (!warehouseId) {
-      setError("Vui lòng chọn kho nhận.");
-      return;
-    }
     const items = products.flatMap((p) =>
       p.variants.filter((v) => v.quantity && Number(v.quantity) > 0).map((v) => ({
-        po_item_id: v.po_item_id || null,
+        po_item_id: v.po_item_id,
         variant_id: v.variant_id,
         quantity: Number(v.quantity),
-        unit_cost: v.unit_cost ? Number(v.unit_cost) : 0
+        unit_cost: v.unit_cost ? Number(v.unit_cost) : 0,
+        sync_master_cost: !!v.sync_master_cost
       }))
     );
     if (items.length === 0) {
@@ -127,9 +99,8 @@ export default function CreateReceipt() {
     setSubmitting(true);
     try {
       const { data } = await api.post("/goods-receipts", {
-        po_id: poId ? Number(poId) : null,
-        supplier_id: supplierId ? Number(supplierId) : null,
-        warehouse_id: Number(warehouseId),
+        po_id: Number(poId),
+        warehouse_id: Number(po.warehouse_id),
         receipt_date: receiptDate || null,
         notes: notes.trim() || null,
         items
@@ -142,24 +113,55 @@ export default function CreateReceipt() {
     }
   };
 
-  const supplierLocked = !!poId;
+  if (!poId) {
+    return (
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10 w-full">
+        <h1 className="text-xl sm:text-2xl font-medium tracking-tight">Tạo phiếu nhập kho</h1>
+        <div className="mt-6 bg-white border border-neutral-200 rounded-lg p-12 text-center">
+          <p className="text-sm text-neutral-500">Phiếu nhập phải được tạo từ một đơn đặt hàng đã xác nhận.</p>
+          <Link to="/admin/warehouse/purchase-orders"
+            className="inline-block mt-6 px-6 py-2.5 text-sm bg-black text-white rounded-md hover:bg-neutral-800 transition-colors">
+            Chọn đơn đặt hàng
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10 w-full flex items-center justify-center py-20 text-neutral-400 gap-2">
+        <IconSpinner className="w-5 h-5" />
+        <span className="text-sm">Đang tải...</span>
+      </div>
+    );
+  }
+
+  if (error || !po) {
+    return (
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10 w-full text-center">
+        <p className="text-sm text-red-600">{error || "Không tìm thấy đơn đặt hàng."}</p>
+        <Link to="/admin/warehouse/purchase-orders"
+          className="inline-block mt-4 text-sm underline underline-offset-4 text-neutral-500 hover:text-neutral-900 transition-colors">
+          ← Quay lại đơn đặt hàng
+        </Link>
+      </div>
+    );
+  }
+
+  const totalQty = products.reduce(
+    (sum, p) => sum + p.variants.filter((v) => v.quantity && Number(v.quantity) > 0)
+      .reduce((s, v) => s + Number(v.quantity), 0), 0) || 0;
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10 w-full">
       <div className="mb-8">
         <h1 className="text-xl sm:text-2xl font-medium tracking-tight">Tạo phiếu nhập kho</h1>
         <p className="mt-1 text-sm text-neutral-500">
-          {poId ? "Nhận hàng theo đơn đặt hàng" : "Nhập kho trực tiếp (không qua đơn đặt hàng)"}
+          Nhận hàng theo đơn đặt hàng <span className="font-mono">{po.po_code}</span>
         </p>
       </div>
 
-      {loading ? (
-        <div className="flex items-center justify-center py-20 text-neutral-400 gap-2">
-          <IconSpinner className="w-5 h-5" />
-          <span className="text-sm">Đang tải...</span>
-        </div>
-      ) : (
-      <>
       {error && (
         <p className="mb-6 text-sm text-red-600 bg-red-50 border border-red-100 rounded-md px-4 py-3">{error}</p>
       )}
@@ -169,36 +171,16 @@ export default function CreateReceipt() {
           <h2 className="text-sm font-medium text-neutral-900 uppercase tracking-wider">Thông tin chung</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
-              <label className="block text-sm text-neutral-600 mb-1">Kho nhận *</label>
-              {supplierLocked ? (
-                <p className="w-full border border-neutral-200 rounded-md px-4 py-2 text-sm bg-neutral-50">
-                  {warehouses.find((w) => String(w.id) === warehouseId)?.name || "—"}
-                </p>
-              ) : (
-                <select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}
-                  className="w-full border border-neutral-200 rounded-md px-4 py-2 text-sm outline-none focus:border-neutral-400 transition-colors bg-white">
-                  <option value="">-- Chọn kho --</option>
-                  {warehouses.map((w) => (
-                    <option key={w.id} value={w.id}>{w.name}</option>
-                  ))}
-                </select>
-              )}
+              <label className="block text-sm text-neutral-600 mb-1">Kho nhận</label>
+              <p className="w-full border border-neutral-200 rounded-md px-4 py-2 text-sm bg-neutral-50">
+                {po.warehouse_name || "—"}
+              </p>
             </div>
             <div>
               <label className="block text-sm text-neutral-600 mb-1">Nhà cung cấp</label>
-              {supplierLocked ? (
-                <p className="w-full border border-neutral-200 rounded-md px-4 py-2 text-sm bg-neutral-50">
-                  {suppliers.find((s) => String(s.id) === supplierId)?.name || "—"}
-                </p>
-              ) : (
-                <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)}
-                  className="w-full border border-neutral-200 rounded-md px-4 py-2 text-sm outline-none focus:border-neutral-400 transition-colors bg-white">
-                  <option value="">-- Chọn nhà cung cấp --</option>
-                  {suppliers.map((s) => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
-                  ))}
-                </select>
-              )}
+              <p className="w-full border border-neutral-200 rounded-md px-4 py-2 text-sm bg-neutral-50">
+                {po.supplier_name || "—"}
+              </p>
             </div>
             <div>
               <label className="block text-sm text-neutral-600 mb-1">Ngày nhận</label>
@@ -217,17 +199,10 @@ export default function CreateReceipt() {
         <div className="bg-white border border-neutral-200 rounded-lg p-6 space-y-4">
           <h2 className="text-sm font-medium text-neutral-900 uppercase tracking-wider">Sản phẩm nhập</h2>
 
-          {!poId && (
-            <ProductSearchSelect
-              onSelect={addProduct}
-              placeholder="Tìm sản phẩm để thêm vào phiếu nhập..."
-            />
-          )}
-
           {products.length === 0 && (
             <div className="border border-dashed border-neutral-200 rounded-lg p-8 text-center">
               <p className="text-sm text-neutral-400">
-                {poId ? "Đơn đặt hàng này đã được nhận đủ hoặc chưa có sản phẩm." : "Tìm và chọn sản phẩm để bắt đầu"}
+                Đơn đặt hàng này đã được nhận đủ hoặc chưa có sản phẩm.
               </p>
             </div>
           )}
@@ -236,12 +211,6 @@ export default function CreateReceipt() {
             <div key={`${product.id}-${pIdx}`} className="border border-neutral-200 rounded-lg overflow-hidden">
               <div className="flex items-center justify-between px-4 py-3 bg-neutral-50 border-b border-neutral-100">
                 <span className="text-sm font-medium text-neutral-900">{product.name}</span>
-                {!supplierLocked && (
-                  <button type="button" onClick={() => removeProduct(pIdx)}
-                    className="p-1 text-neutral-400 hover:text-red-600 rounded hover:bg-red-50 transition-colors">
-                    <IconTrash className="w-4 h-4" />
-                  </button>
-                )}
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -250,30 +219,56 @@ export default function CreateReceipt() {
                       <th className="px-4 py-2 font-medium">Màu</th>
                       <th className="px-4 py-2 font-medium">Size</th>
                       <th className="px-4 py-2 font-medium">SKU</th>
-                      <th className="px-4 py-2 font-medium text-right w-28">Số lượng</th>
-                      <th className="px-4 py-2 font-medium text-right w-36">Giá nhập</th>
+                      <th className="px-4 py-2 font-medium text-right w-20">SL</th>
+                      <th className="px-4 py-2 font-medium text-right">Giá master</th>
+                      <th className="px-4 py-2 font-medium text-right">Giá PO</th>
+                      <th className="px-4 py-2 font-medium text-right w-32">Giá nhập</th>
+                      <th className="px-4 py-2 font-medium text-center w-40">Đồng bộ master</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {product.variants.map((variant, vIdx) => (
-                      <tr key={variant.variant_id} className="border-t border-neutral-50 hover:bg-neutral-50/50 transition-colors">
-                        <td className="px-4 py-2 text-neutral-700">{variant.color || "—"}</td>
-                        <td className="px-4 py-2 text-neutral-700">{variant.size || "—"}</td>
-                        <td className="px-4 py-2 text-neutral-400 text-xs font-mono">{variant.sku}</td>
-                        <td className="px-4 py-2">
-                          <input type="number" min="0" value={variant.quantity}
-                            onChange={(e) => updateVariant(pIdx, vIdx, "quantity", e.target.value)}
-                            placeholder="SL"
-                            className="w-full border border-neutral-200 rounded px-2 py-1.5 text-sm text-right outline-none focus:border-neutral-400" />
-                        </td>
-                        <td className="px-4 py-2">
-                          <input type="number" min="0" value={variant.unit_cost}
-                            onChange={(e) => updateVariant(pIdx, vIdx, "unit_cost", e.target.value)}
-                            placeholder="₫"
-                            className="w-full border border-neutral-200 rounded px-2 py-1.5 text-sm text-right outline-none focus:border-neutral-400" />
-                        </td>
-                      </tr>
-                    ))}
+                    {product.variants.map((variant, vIdx) => {
+                      const poPrice = Number(variant.po_price || 0);
+                      const costPrice = variant.unit_cost ? Number(variant.unit_cost) : null;
+                      const differs = costPrice !== null && costPrice !== poPrice;
+                      const masterPrice = supplierPrices[variant.variant_id];
+                      return (
+                        <tr key={variant.variant_id} className="border-t border-neutral-50 hover:bg-neutral-50/50 transition-colors">
+                          <td className="px-4 py-2 text-neutral-700">{variant.color || "—"}</td>
+                          <td className="px-4 py-2 text-neutral-700">{variant.size || "—"}</td>
+                          <td className="px-4 py-2 text-neutral-400 text-xs font-mono">{variant.sku}</td>
+                          <td className="px-4 py-2">
+                            <input type="number" min="0" value={variant.quantity}
+                              onChange={(e) => updateVariant(pIdx, vIdx, "quantity", e.target.value)}
+                              className="w-full border border-neutral-200 rounded px-2 py-1.5 text-sm text-right outline-none focus:border-neutral-400" />
+                          </td>
+                          <td className="px-4 py-2 text-right text-neutral-400">
+                            {formatMoney(masterPrice)}
+                          </td>
+                          <td className="px-4 py-2 text-right text-neutral-600">
+                            {formatMoney(poPrice)}
+                          </td>
+                          <td className="px-4 py-2">
+                            <input type="number" min="0" value={variant.unit_cost}
+                              onChange={(e) => updateVariant(pIdx, vIdx, "unit_cost", e.target.value)}
+                              className="w-full border border-neutral-200 rounded px-2 py-1.5 text-sm text-right outline-none focus:border-neutral-400" />
+                            {differs && (
+                              <p className="text-right text-[11px] text-amber-600 mt-1">Chênh lệch với giá PO</p>
+                            )}
+                          </td>
+                          <td className="px-4 py-2 text-center">
+                            <label className={`inline-flex items-center gap-1.5 text-xs cursor-pointer ${differs ? "text-neutral-600" : "text-neutral-300"}`}>
+                              <input type="checkbox"
+                                checked={!!variant.sync_master_cost}
+                                disabled={!differs}
+                                onChange={(e) => updateVariant(pIdx, vIdx, "sync_master_cost", e.target.checked)}
+                                className="rounded border-neutral-300 text-black focus:ring-black" />
+                              Cập nhật giá NCC
+                            </label>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -282,9 +277,7 @@ export default function CreateReceipt() {
         </div>
 
         <div className="flex items-center justify-between">
-          <p className="text-sm text-neutral-500">
-            {products.reduce((sum, p) => sum + p.variants.filter((v) => v.quantity && Number(v.quantity) > 0).reduce((s, v) => s + Number(v.quantity), 0), 0) || 0} sản phẩm
-          </p>
+          <p className="text-sm text-neutral-500">{totalQty} sản phẩm</p>
           <div className="flex items-center gap-3">
             <button type="button" onClick={() => navigate("/admin/warehouse/receipts")}
               className="px-5 py-2.5 text-sm text-neutral-600 hover:text-neutral-900 transition-colors">
@@ -298,8 +291,6 @@ export default function CreateReceipt() {
           </div>
         </div>
       </form>
-      </>
-      )}
     </div>
   );
 }

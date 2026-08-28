@@ -2,11 +2,13 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import api from "../../../services/api";
 import { IconSpinner, IconSearch, IconChevron } from "../../../components/admin/Icons";
+import { getColorHex } from "../../../utils/colorMap";
 
 export default function StockList() {
-  const { warehouseId } = useParams();
+  const { warehouseSlug } = useParams();
   const [products, setProducts] = useState([]);
   const [warehouse, setWarehouse] = useState(null);
+  const [warehouseLoaded, setWarehouseLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [expandedId, setExpandedId] = useState(null);
@@ -25,10 +27,14 @@ export default function StockList() {
     api.get("/warehouse/warehouses")
       .then(({ data }) => {
         const list = Array.isArray(data?.data) ? data.data : [];
-        setWarehouse(list.find((w) => String(w.id) === String(warehouseId)) || null);
+        const found = list.find(
+          (w) => String(w.slug) === String(warehouseSlug) || String(w.id) === String(warehouseSlug)
+        );
+        setWarehouse(found || null);
       })
-      .catch(() => {});
-  }, [warehouseId]);
+      .catch(() => {})
+      .finally(() => setWarehouseLoaded(true));
+  }, [warehouseSlug]);
 
   useEffect(() => {
     setPage(1);
@@ -36,7 +42,7 @@ export default function StockList() {
     setSearchInput("");
     setExpandedId(null);
     setVariantStock({});
-  }, [warehouseId]);
+  }, [warehouseSlug]);
 
   const fetchProducts = useCallback(async () => {
     setLoading(true);
@@ -44,6 +50,7 @@ export default function StockList() {
     try {
       const params = { page, limit: 15 };
       if (search.trim()) params.search = search.trim();
+      if (warehouse?.id) params.warehouse_id = warehouse.id;
       const { data } = await api.get("/products", { params });
       const list = data?.data ?? [];
       setProducts(list);
@@ -55,7 +62,7 @@ export default function StockList() {
     } finally {
       setLoading(false);
     }
-  }, [page, search]);
+  }, [page, search, warehouse]);
 
   useEffect(() => { fetchProducts(); }, [fetchProducts]);
 
@@ -66,11 +73,13 @@ export default function StockList() {
     }
     setExpandedId(productId);
 
+    if (!warehouse) return;
+
     if (!variantStock[productId]) {
       setLoadingVariants((prev) => ({ ...prev, [productId]: true }));
       try {
         const { data } = await api.get(`/warehouse/stocks/product/${productId}`, {
-          params: { warehouse_id: warehouseId }
+          params: { warehouse_id: warehouse.id }
         });
         const stockMap = {};
         (data?.data ?? []).forEach((v) => {
@@ -135,7 +144,15 @@ export default function StockList() {
         <p className="mb-6 text-sm text-red-600 bg-red-50 border border-red-100 rounded-md px-4 py-3">{error}</p>
       )}
 
-      {loading ? (
+      {warehouseLoaded && !warehouse ? (
+        <div className="border border-dashed border-neutral-200 rounded-lg bg-white p-12 text-center">
+          <p className="text-sm text-neutral-500">Không tìm thấy kho.</p>
+          <Link to="/admin/warehouse/stocks"
+            className="inline-block mt-4 text-sm underline underline-offset-4 hover:text-neutral-600">
+            Quay lại danh sách kho
+          </Link>
+        </div>
+      ) : loading ? (
         <div className="flex items-center justify-center py-20 text-neutral-400 gap-2">
           <IconSpinner className="w-5 h-5" />
           <span className="text-sm">Đang tải...</span>
@@ -154,18 +171,21 @@ export default function StockList() {
                 <thead>
                   <tr className="bg-neutral-50 text-left text-xs uppercase tracking-wider text-neutral-500">
                     <th className="px-4 py-3 font-medium w-8"></th>
+                    <th className="px-4 py-3 font-medium w-14">Ảnh</th>
                     <th className="px-4 py-3 font-medium">Sản phẩm</th>
                     <th className="px-4 py-3 font-medium hidden sm:table-cell">Danh mục</th>
                     <th className="px-4 py-3 font-medium text-right">Tồn kho</th>
-                    <th className="px-4 py-3 font-medium text-right hidden md:table-cell">Biến thể</th>
                   </tr>
                 </thead>
                 <tbody>
                   {products.map((p) => {
                     const stockData = variantStock[p.id];
-                    const totalQty = stockData?.variants?.reduce((s, v) => s + Number(v.stock_qty), 0) ?? null;
+                    const totalQty = p.total_stock != null
+                      ? Number(p.total_stock)
+                      : (stockData?.variants?.reduce((s, v) => s + Number(v.stock_qty), 0) ?? null);
                     const lowCount = stockData?.variants?.filter((v) => isLow(v.stock_qty)).length ?? 0;
                     const outCount = stockData?.variants?.filter((v) => v.stock_qty === 0).length ?? 0;
+                    const hasStockInfo = p.total_stock != null;
                     const isExpanded = expandedId === p.id;
 
                     return (
@@ -175,21 +195,25 @@ export default function StockList() {
                             className="w-full flex items-center gap-3 px-4 py-3 hover:bg-neutral-50/80 transition-colors text-left"
                           >
                             <IconChevron expanded={isExpanded} className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
-                            <span className="flex-1 font-medium text-neutral-900">{p.name}</span>
-                            <span className="hidden sm:table-cell text-sm text-neutral-500">{p.category_name || "—"}</span>
-                            <span className="text-sm text-right w-16 shrink-0">
+                            <span className="w-10 h-10 shrink-0 rounded-md overflow-hidden bg-neutral-100 border border-neutral-200 flex items-center justify-center">
+                              {p.image_url ? (
+                                <img src={p.image_url} alt={p.name} className="w-full h-full object-cover" />
+                              ) : (
+                                <span className="text-[10px] text-neutral-400">N/A</span>
+                              )}
+                            </span>
+                            <span className="flex-1 min-w-0 font-medium text-neutral-900 truncate">{p.name}</span>
+                            <span className="hidden sm:table-cell text-sm text-neutral-500 self-center whitespace-nowrap">{p.category_name || "—"}</span>
+                            <span className="text-sm text-right w-16 shrink-0 self-center">
                               {totalQty !== null ? (
                                 <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
-                                  totalQty === 0 ? "text-red-600 bg-red-50" : (lowCount > 0 || outCount > 0) ? "text-amber-600 bg-amber-50" : "text-green-600 bg-green-50"
+                                  totalQty === 0 ? "text-red-600 bg-red-50" : !hasStockInfo ? "text-green-600 bg-green-50" : (lowCount > 0 || outCount > 0) ? "text-amber-600 bg-amber-50" : "text-green-600 bg-green-50"
                                 }`}>
                                   {totalQty}
                                 </span>
                               ) : (
                                 <span className="text-neutral-400">—</span>
                               )}
-                            </span>
-                            <span className="hidden md:table-cell text-sm text-neutral-400 text-right w-16 shrink-0">
-                              {stockData?.variants?.length ?? "—"}
                             </span>
                           </button>
 
@@ -219,7 +243,17 @@ export default function StockList() {
                                       return (
                                         <tr key={v.variant_id} className="border-t border-neutral-50 hover:bg-white transition-colors">
                                           <td className="pl-10 pr-4 py-2"></td>
-                                          <td className="px-4 py-2 text-neutral-700">{v.color || "—"}</td>
+                                          <td className="px-4 py-2 text-neutral-700">
+                                            <span className="inline-flex items-center gap-2">
+                                              {getColorHex(v.color) && (
+                                                <span
+                                                  className="inline-block w-3 h-3 rounded-full border border-neutral-300 shrink-0"
+                                                  style={{ backgroundColor: getColorHex(v.color) }}
+                                                />
+                                              )}
+                                              <span>{v.color || "—"}</span>
+                                            </span>
+                                          </td>
                                           <td className="px-4 py-2 text-neutral-700 hidden sm:table-cell">{v.size || "—"}</td>
                                           <td className="px-4 py-2 text-neutral-400 text-xs font-mono">{v.sku}</td>
                                           <td className="px-4 py-2 text-right">
